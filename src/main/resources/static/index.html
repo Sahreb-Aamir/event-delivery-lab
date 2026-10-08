@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102d38">
+  <meta name="description" content="A local workbench for testing synthetic notification delivery, retries, and idempotency.">
+  <title>Event Delivery Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/delivery-tracker.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to workbench</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Event Delivery Lab home">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none"><path d="M4 15h5l3-8 4 14 3-8h5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span>Event Delivery <strong>Lab</strong></span>
+    </a>
+    <div class="topbar-meta"><span class="local-badge"><span aria-hidden="true"></span>LOCAL WORKBENCH</span><a href="#how-it-works">How it works <span aria-hidden="true">↗</span></a></div>
+  </header>
+
+  <main id="main" class="workspace">
+    <section class="intro" aria-labelledby="page-title">
+      <div><p class="eyebrow">INDEPENDENT EXPERIMENT / JAVA + KAFKA</p><h1 id="page-title">Make delivery failures<br> reproducible.</h1><p class="lede">See what retries actually do. Send synthetic notifications, create<br class="desktop-break"> controlled failures, and inspect real HTTP attempts.</p></div>
+      <div class="connection"><span id="connection-dot" class="connection-dot checking" aria-hidden="true"></span><div><strong id="connection-label">Connecting to the API</strong><span id="last-updated">Refreshes every 2 seconds</span></div><button id="refresh-button" class="icon-button" type="button" aria-label="Refresh events" title="Refresh events"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M16 7a6.5 6.5 0 1 0 .2 5M16 3v4h-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+    </section>
+
+    <div id="network-error" class="notice notice-error" role="alert" hidden><span id="network-error-text"></span><button id="retry-refresh-button" class="text-button" type="button">Retry connection</button></div>
+
+    <section class="metrics" aria-label="Summary of the recent events currently shown">
+      <div class="metric"><span class="metric-label">Recent receipts</span><strong id="metric-total">—</strong><span class="metric-note">Latest 20 events</span></div>
+      <div class="metric"><span class="metric-label"><i class="tiny-dot green" aria-hidden="true"></i> Delivered</span><strong id="metric-delivered">—</strong><span class="metric-note">Receiver returned success</span></div>
+      <div class="metric"><span class="metric-label"><i class="tiny-dot amber" aria-hidden="true"></i> In progress</span><strong id="metric-progress">—</strong><span class="metric-note">Queued, delivering, or retrying</span></div>
+      <div class="metric"><span class="metric-label"><i class="tiny-dot red" aria-hidden="true"></i> Needs attention</span><strong id="metric-failed">—</strong><span class="metric-note">Failed or interrupted</span></div>
+    </section>
+
+    <div class="workbench-grid">
+      <div class="compose-column">
+        <section class="panel" aria-labelledby="compose-title">
+          <div class="panel-heading"><div><p class="eyebrow">01 / PUBLISH</p><h2 id="compose-title">Compose an event</h2></div><span class="endpoint-tag">POST</span></div>
+          <form id="event-form">
+            <label for="seller-id">Seller ID</label><input id="seller-id" name="sellerId" value="demo-shop" required maxlength="64" pattern="demo-[a-z0-9\-]+" title="Use demo- followed by lowercase letters, numbers, or hyphens." autocomplete="off">
+            <div class="label-row"><label for="message">Notification</label><span id="message-count" class="field-hint">0 / 500</span></div>
+            <textarea id="message" name="message" rows="4" required maxlength="500" aria-describedby="synthetic-hint">Your order #DEMO-1042 is ready to ship.</textarea>
+            <p id="synthetic-hint" class="field-hint">Use synthetic data. This lab has no authentication.</p>
+            <div class="label-row event-id-label"><label for="event-id">Event ID <span class="optional-label">/ idempotency key</span></label><button id="new-id-button" class="text-button" type="button">New ID</button></div>
+            <input id="event-id" class="mono id-input" name="eventId" type="text" readonly aria-describedby="event-id-hint">
+            <p id="event-id-hint" class="field-hint">A fresh ID is generated after each accepted event.</p>
+            <button id="send-button" class="button button-primary" type="submit"><span>Send event</span><span aria-hidden="true">→</span></button>
+            <button id="replay-button" class="button button-secondary" type="button" disabled>Replay last submitted event</button>
+            <p class="microcopy">Replay resends the same ID and payload to test deduplication.</p>
+          </form>
+          <div id="action-notice" class="notice action-notice" role="status" aria-live="polite" hidden></div>
+        </section>
+
+        <section class="panel scenarios" aria-labelledby="scenarios-title">
+          <div class="panel-heading"><div><p class="eyebrow">02 / EXPERIMENT</p><h2 id="scenarios-title">Make failure observable</h2></div></div>
+          <span class="simulation-badge"><span aria-hidden="true">◈</span> Simulated HTTP receiver</span>
+          <p class="section-description">Run a synthetic scenario using the notification above. Each run creates a new event.</p>
+          <div class="scenario-list">
+            <button id="lost-ack-button" class="scenario-button scenario-featured" type="button"><span class="scenario-icon teal" aria-hidden="true">⇄</span><span><strong>Lose the acknowledgment</strong><small>Perform the action, delay its response</small></span><span class="scenario-arrow" aria-hidden="true">↗</span></button>
+            <button class="scenario-button" data-failures="0" type="button"><span class="scenario-icon green" aria-hidden="true">✓</span><span><strong>Successful delivery</strong><small>Clear failures, then send an event</small></span><span class="scenario-arrow" aria-hidden="true">↗</span></button>
+            <button class="scenario-button" data-failures="2" type="button"><span class="scenario-icon amber" aria-hidden="true">↻</span><span><strong>Recover from failure</strong><small>Fail 2 requests, then recover</small></span><span class="scenario-arrow" aria-hidden="true">↗</span></button>
+            <button class="scenario-button" data-failures="3" type="button"><span class="scenario-icon red" aria-hidden="true">!</span><span><strong>Exhaust automatic attempts</strong><small>Fail 3 requests, then retry manually</small></span><span class="scenario-arrow" aria-hidden="true">↗</span></button>
+          </div>
+          <div class="receiver-controls"><label for="failure-count">Fail next receiver requests</label><div class="inline-control"><input id="failure-count" type="number" min="0" max="10" step="1" value="0" aria-describedby="failure-hint"><button id="set-failures-button" class="button button-small button-secondary" type="button">Apply</button></div></div>
+          <p id="failure-hint" class="microcopy">0 clears failures. The next requests across <strong>all events</strong> share this counter; run one scenario at a time.</p>
+          <p id="scenario-state" class="microcopy" role="status" aria-live="polite" hidden></p>
+        </section>
+      </div>
+
+      <div class="observe-column">
+        <section class="ack-explainer" aria-labelledby="ack-title"><span class="explainer-icon" aria-hidden="true">?</span><div><h2 id="ack-title">A timeout leaves a question unanswered.</h2><p>Did the receiver perform the action? A retry can repeat it. In this controlled receiver, <code>Idempotency-Key</code> prevents repeat side effects for the same event.</p><a href="#receiver-observation">Inspect the receiver <span aria-hidden="true">↓</span></a></div></section>
+        <section class="panel activity-panel" aria-labelledby="activity-title">
+          <div class="panel-heading"><div><p class="eyebrow">03 / OBSERVE</p><h2 id="activity-title">Recent events</h2></div><span class="live-label"><i class="tiny-dot" aria-hidden="true"></i><span id="live-label">AUTO REFRESH</span></span></div>
+          <div id="events-empty" class="empty-state"><span class="empty-icon" aria-hidden="true">↗</span><h3>Your next event starts here</h3><p>Send a notification or run a scenario.<br>Its receipt and delivery attempts will appear here.</p></div>
+          <div id="events-table-wrap" class="table-wrap" hidden><table><thead><tr><th scope="col">Event / seller</th><th scope="col">Delivery status</th><th scope="col" class="attempts-column">Attempts</th><th scope="col" class="time-column">Received</th></tr></thead><tbody id="events-body"></tbody></table></div>
+          <div class="panel-bottom"><span>A receipt confirms storage. <strong>Delivered confirms HTTP success.</strong></span></div>
+        </section>
+
+        <section class="panel detail-panel" aria-labelledby="detail-title">
+          <div class="panel-heading"><div><p class="eyebrow">04 / INSPECT</p><h2 id="detail-title">Delivery detail</h2></div><span id="detail-status" hidden></span></div>
+          <div id="detail-empty" class="detail-empty"><span aria-hidden="true">⌁</span><p>Select an event to inspect its payload and attempt history.</p></div>
+          <div id="detail-content" hidden>
+            <dl class="detail-fields"><div class="full-width"><dt>Event ID</dt><dd id="detail-id" class="mono"></dd></div><div><dt>Seller ID</dt><dd id="detail-seller"></dd></div><div><dt>Event occurred</dt><dd id="detail-occurred"></dd></div><div class="full-width"><dt>Notification</dt><dd id="detail-message" class="message-preview"></dd></div></dl>
+            <div class="attempts-heading"><h3>Delivery attempts</h3><span id="detail-attempt-count" class="field-hint"></span></div>
+            <p id="attempts-empty" class="section-description">No HTTP attempt is stored for this event.</p>
+            <ol id="attempts-list" class="attempts-list"></ol>
+            <div id="failed-actions" class="failed-actions" hidden><div><strong id="recovery-title">Automatic delivery stopped.</strong><p id="recovery-description">Inspect the attempts above. Clear injected failures before retrying.</p></div><button id="retry-event-button" class="button button-small button-secondary" type="button">Retry this event</button></div>
+            <p id="detail-fetch-error" class="detail-fetch-error" role="status" hidden></p>
+          </div>
+        </section>
+        <section id="receiver-observation" class="panel receiver-panel" aria-labelledby="receiver-title"><div class="panel-heading"><div><p class="eyebrow">05 / VERIFY THE OTHER SIDE</p><h2 id="receiver-title">Receiver observation</h2></div><span class="simulation-badge">In-memory demo</span></div><div class="receiver-metrics"><div><strong id="receiver-requests">—</strong><span>HTTP requests received</span></div><div><strong id="receiver-effects">—</strong><span>Unique recorded side effects</span></div></div><p id="receiver-event-evidence" class="receiver-evidence">Select an event to check its receiver-side record.</p><p class="microcopy">Counters cover <strong>all events</strong> in the current process and reset on application restart. Compare exact event IDs below; global counters alone do not prove one event’s behavior.</p><p id="receiver-error" class="detail-fetch-error" role="status" hidden></p></section>
+      </div>
+    </div>
+
+    <section id="how-it-works" class="how-it-works" aria-labelledby="how-title"><div><p class="eyebrow">BUILT TO MAKE GUARANTEES VISIBLE</p><h2 id="how-title">Acceptance is the beginning.</h2><p>An accepted event moves through a queue, a durable receipt, and a real HTTP delivery attempt. Those are separate facts.</p></div><ol class="flow"><li><span class="step-number">1</span><strong>Publish</strong><span>API → Kafka</span></li><li><span class="step-number">2</span><strong>Record</strong><span>Deduplicate by event ID</span></li><li><span class="step-number">3</span><strong>Deliver</strong><span>Attempt → retry → outcome</span></li></ol></section>
+    <footer><span><strong>Event Delivery Lab</strong> · Synthetic data. Localhost only.</span><p>One stored receipt per event ID. Remote delivery may repeat; receivers should honor the idempotency key. HTTP success does not prove downstream business processing.</p></footer>
+  </main>
+</body>
+</html>
