@@ -80,11 +80,35 @@ Executable check: `DeliveryIntegrationTest#exhaustedRetriesReachDeadLetterAndExp
 
 ## Recover unfinished work after a demo restart
 
-The embedded broker starts fresh each time. If the previous run stopped with a receipt still queued, delivering, or retrying, the demo launcher marks that event `INTERRUPTED` before starting the new consumer. The old broker's record is gone; the persisted receipt and attempt history remain.
+The embedded broker starts fresh each time. If the previous run stopped with a receipt still queued, delivering, or retrying, the demo launcher marks that event `INTERRUPTED` before starting the new consumer. The old broker's record is gone. Startup reconciliation acts on the receipt and attempt history that survive; hard-stop persistence has the [limitations recorded in the experiments](results.md#what-a-harder-test-exposed).
 
 Select the interrupted event, inspect its attempts, clear any injected failures, and choose **Retry this event** if you want to republish the original payload. An old `PENDING` attempt stays unknown even if a later attempt succeeds. The receiver may already have acted, and its in-memory idempotency map resets with the application, so retry can repeat a side effect.
 
 This startup behavior applies only to the local embedded-broker launcher. The packaged application using an external broker does not rewrite unfinished states on startup. Storage tests cover interruption reconciliation and preserve attempt history; this is not a claim of automatic restart-safe delivery.
+
+## Force-stop the full application
+
+**Question:** Does the full launcher preserve an unknown attempt when the receiver has acted but the sender is killed before recording a response?
+
+Run the focused test (also included in `verify`):
+
+```sh
+./mvnw -Dtest=FullAppCrashRecoveryTest test
+```
+
+Windows PowerShell:
+
+```powershell
+.\mvnw.cmd "-Dtest=FullAppCrashRecoveryTest" test
+```
+
+[`FullAppCrashRecoveryTest`](../src/test/java/dev/sahreb/delivery/FullAppCrashRecoveryTest.java) starts `LocalLab` in a child JVM with real Kafka, a fresh file database, and an isolated loopback HTTP port. It sends six successful events, delays the next receiver acknowledgment, and waits for the new event's exact ID at the receiver and a `PENDING` sender attempt. Only then does it forcibly terminate its own child process.
+
+The test inspects a database copy before restarting the app, asserts that the receipt and pending attempt survived, and then checks that startup reconciliation produces `INTERRUPTED`. Explicit retry must preserve the old unknown attempt and add a new `SUCCEEDED` attempt. The receiver resets on restart, so the same event performs another effect in the new process; this drill does not demonstrate durable receiver deduplication.
+
+Evidence is retained in a unique directory under `target/crash-probe/`: runtime/configuration details, HTTP observations, a database snapshot from before restart, raw database observations, and both application logs. CI uploads this evidence alongside the Java test reports. Copy it elsewhere before running `clean` if you need to investigate a failure. The test never uses the dashboard's `data/receipts` database. Run one Maven build at a time in a checkout so another build cannot replace the child process's classes during the experiment.
+
+This is a controlled process-termination check, not a power-loss or persistent-broker recovery test. The [earlier unexplained loss](results.md#what-a-harder-test-exposed) remains an open investigation even when this check passes.
 
 ## Replay an identical event
 

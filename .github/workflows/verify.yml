@@ -31,4 +31,9 @@ jobs:
         if: always()
         with:
           name: test-results-java-${{ matrix.java }}
-          path: target/surefire-reports/
+          path: |
+            target/surefire-reports/
+            target/crash-probe/*/*.json
+            target/crash-probe/*/*.txt
+            target/crash-probe/*/*.log
+            target/crash-probe/*/*.mv.db
