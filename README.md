@@ -89,6 +89,7 @@ The suite uses an embedded Kafka broker, real local HTTP receivers, and H2. Its 
 | Concurrent receipt deduplication and persistence after database reopen | [ReceiptStoreTest](src/test/java/dev/sahreb/delivery/ReceiptStoreTest.java) |
 | Attempt/state transactions, retained history, and uncertain pending attempts | [DeliveryStoreTest](src/test/java/dev/sahreb/delivery/DeliveryStoreTest.java) |
 | Pending intent survives forced writer-process termination | [H2CrashDurabilityTest](src/test/java/dev/sahreb/delivery/H2CrashDurabilityTest.java) |
+| Full launcher: receiver observes the event, process is killed, history survives restart and explicit retry | [FullAppCrashRecoveryTest](src/test/java/dev/sahreb/delivery/FullAppCrashRecoveryTest.java) |
 | Request validation, broker acknowledgment failures, and receiver controls | [NotificationApiTest](src/test/java/dev/sahreb/delivery/NotificationApiTest.java) |
 
 The full Maven suite and documented local launch have been verified locally. The passing lost-acknowledgment comparison recorded two requests in both cases, two side effects without receiver deduplication, and one with it. See the [reproduction command and scope](docs/failure-drills.md#compare-naive-and-idempotent-receivers) before interpreting those numbers. [GitHub Actions](.github/workflows/verify.yml) is configured to run the Java suite on Java 17 and 21.
@@ -100,6 +101,8 @@ node --test src/test/js/delivery-tracker.test.cjs
 ```
 
 Node is needed only for these frontend checks, not to run the application.
+
+The [automated crash drill](docs/failure-drills.md#force-stop-the-full-application) uses a separate process and database. It saves receiver observations, database snapshots, application logs, and recovery results under `target/crash-probe/` so a failure can be investigated.
 
 ## Implementation choices
 

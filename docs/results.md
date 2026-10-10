@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–8, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
+Local verification: October 7–9, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -12,7 +12,7 @@ node --test src/test/js/delivery-tracker.test.cjs
 .\mvnw.cmd spring-boot:test-run@local-lab
 ```
 
-The Java suite passed 50 tests with zero failures, errors, or skipped tests. The six dashboard state tests passed. The [workflow](../.github/workflows/verify.yml) also checks Java 17 and 21, plus the dashboard state tests on Node 22.
+On October 9, the Java suite passed 51 tests with zero failures, errors, or skipped tests. The six dashboard state tests passed. The [workflow](../.github/workflows/verify.yml) also checks Java 17 and 21, plus the dashboard state tests on Node 22.
 
 ## Lost acknowledgment: isolate the cause
 
@@ -52,6 +52,21 @@ Two consecutive full-application cycles using the documented Maven launcher and 
 The discrepancy remains unresolved. The passing experiments cover process termination under their tested conditions, not every crash timing, power failure, storage controller, or filesystem fault. Do not depend on this experimental lab as the sole audit record for real notifications. Investigating the earlier loss is follow-up work; the lost-acknowledgment comparison does not depend on a crash-safety claim.
 
 The local broker lifecycle test also verifies real Kafka connectivity, loopback-only socket binding, released ports, and temporary-storage cleanup. The full launcher was checked at runtime: HTTP, broker, and controller listeners all used `127.0.0.1`.
+
+## Automated full-application crash and recovery
+
+On October 9, [`FullAppCrashRecoveryTest`](../src/test/java/dev/sahreb/delivery/FullAppCrashRecoveryTest.java) passed both on its own and in the full suite. It exercises the real `LocalLab` child process with Kafka, HTTP, and a fresh file database. The controlled crash window uses a 5-second receiver acknowledgment delay and a 30-second sender timeout; the application defaults are unchanged.
+
+| Stage | Observed and asserted |
+| --- | --- |
+| Before termination | Six completed events; the seventh event's exact ID observed at the receiver, with one `PENDING` sender attempt |
+| Database copy inspected before restart | All seven receipts and attempts retained; pending attempt fields matched the pre-kill API observation |
+| Fresh launcher and broker | Target became `INTERRUPTED`; receipt and unknown attempt were unchanged; six completed events were unchanged |
+| Explicit retry | `DELIVERED`, with the old `PENDING` attempt plus one new `SUCCEEDED` attempt |
+
+The receiver starts empty after restart and performs a second effect for the target event across the two process lifetimes. This makes its volatile deduplication limit observable. A negative control temporarily removed startup reconciliation: the test failed because the event remained `DELIVERING` instead of becoming `INTERRUPTED`. The call was restored before the passing full suite.
+
+The [focused command and evidence locations](failure-drills.md#force-stop-the-full-application) let another developer repeat the check or inspect a failed run. These results add a reproducible full-path regression; they do not resolve the earlier anomaly or establish power-loss safety.
 
 ## Interpretation
 
