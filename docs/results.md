@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–9, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
+Local verification: October 7–12, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -12,7 +12,7 @@ node --test src/test/js/delivery-tracker.test.cjs
 .\mvnw.cmd spring-boot:test-run@local-lab
 ```
 
-On October 9, the Java suite passed 51 tests with zero failures, errors, or skipped tests. The six dashboard state tests passed. The [workflow](../.github/workflows/verify.yml) also checks Java 17 and 21, plus the dashboard state tests on Node 22.
+On October 12, the Java suite passed 67 tests with zero failures, errors, or skipped tests. The six dashboard state tests passed. The [workflow](../.github/workflows/verify.yml) also checks Java 17 and 21, plus the dashboard state tests on Node 22.
 
 ## Lost acknowledgment: isolate the cause
 
@@ -67,6 +67,16 @@ On October 9, [`FullAppCrashRecoveryTest`](../src/test/java/dev/sahreb/delivery/
 The receiver starts empty after restart and performs a second effect for the target event across the two process lifetimes. This makes its volatile deduplication limit observable. A negative control temporarily removed startup reconciliation: the test failed because the event remained `DELIVERING` instead of becoming `INTERRUPTED`. The call was restored before the passing full suite.
 
 The [focused command and evidence locations](failure-drills.md#force-stop-the-full-application) let another developer repeat the check or inspect a failed run. These results add a reproducible full-path regression; they do not resolve the earlier anomaly or establish power-loss safety.
+
+## Read-only dead-letter inspection
+
+On October 12, the focused inspector and Kafka integration suites passed 23 checks, followed by the full 67-test Java suite. Actual broker failures produced inspectable HTTP-exhaustion, conflicting-payload, and malformed-JSON dead letters. The API returned the retained payload preview, application exception type, and source record coordinates; the malformed event remained absent from receipt storage.
+
+Repeated HTTP inspection preserved the delivery group's committed offsets, consumer-group inventory, receipt count, and stored delivery history. After explicit retry succeeded, the original dead-letter item remained inspectable. An unknown event ID returned an empty snapshot, with the searched window still visible. Invalid query values returned `400`.
+
+Controlled consumer fixtures separately verified the latest-100-offset window, retention gaps, newest-match limits, exclusion of later appends, bounded previews, malformed headers, incomplete scans and broker failures returning `503`, and concurrent inspection returning `429`. Those fixtures are not a measurement of broker-outage latency. The scan budget covers Kafka operations rather than promising an absolute HTTP wall-clock deadline.
+
+Reproduce with the [API drill](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) or `./mvnw "-Dtest=DeadLetterInspectorTest,DeliveryIntegrationTest" test` (PowerShell: `.\mvnw.cmd "-Dtest=DeadLetterInspectorTest,DeliveryIntegrationTest" test`). These results cover the lab's single-partition, synthetic-data setup; they do not establish complete history, a production audit service, or multi-partition support.
 
 ## Interpretation
 

@@ -11,6 +11,7 @@ flowchart LR
     C -->|HTTP + Idempotency-Key| R[Controlled receiver]
     R --> E[In-memory effect per event ID]
     C -->|exhausted or invalid| DLT[notification.requests.DLT]
+    UI -->|read bounded snapshot through API| DLT
     UI -->|read state| DB
     UI -->|read receiver observations| R
 ```
@@ -75,6 +76,16 @@ The three-attempt policy is the normal HTTP-failure budget, not an absolute life
 `POST /api/events/{id}/retry` accepts `FAILED` or `INTERRUPTED` events and republishes the original stored payload. It adds to existing attempt history. It does not remove any original dead-letter record. The dashboard supports this path for valid recorded events; it does not currently browse or repair malformed/dead-letter-only records.
 
 The browser tracks acknowledged submissions until it observes a terminal result, including IDs that have not yet appeared as receipts or have left the latest-20 window. A manual retry captures the previous attempt count: an old `FAILED` or `INTERRUPTED` snapshot cannot be mistaken for completion of the newly accepted retry. Shared receiver controls remain locked until a new attempt reaches a terminal state. These pending observations live in the browser, not in a second delivery-state store.
+
+### Read-only dead-letter diagnostics
+
+`GET /api/dead-letters` creates a short-lived consumer for a snapshot of the latest 100 offset positions in the fixed dead-letter topic. Optional `eventId` matches the Kafka key; `limit` controls the newest 1–100 matches returned (default 20). The response exposes the searched interval, omitted-history/result flags, failure-header prefixes, and original record coordinates. Payload previews are capped at 2,048 UTF-16 code units, keys at 128, exception classes at 256, and exception messages at 512; arbitrary headers and stack traces are not returned.
+
+[`DeadLetterInspector`](../src/main/java/dev/sahreb/delivery/DeadLetterInspector.java) copies the configured broker connection settings, removes the consumer group/static-member identifiers, disables automatic commits and topic creation, then manually assigns partition 0 and seeks to the bounded start. [Kafka's consumer API](https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/clients/consumer/KafkaConsumer.java) separates manual assignment from group subscription and offset commits. The inspector never calls either subscription or commit methods. It has no producer or database dependency.
+
+Metadata, offset lookups and polling share a 3-second budget, followed by a consumer close of at most 100 ms. A semaphore admits one query at a time; concurrent requests receive `429`. A timed-out/incomplete scan or unsupported topic topology returns `503`, rather than a successful empty result. The snapshot excludes records appended after its captured end offset. Offset gaps and retention are possible; a missing match is not a full-history conclusion. Only the lab's single partition is supported. The 64 KiB fetch settings are targets, not hard heap limits: Kafka may return an oversized first batch so consumption can progress.
+
+The [failure guide](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) gives requests and interpretation. This API is a diagnostic foundation for a later read-only MCP companion; no MCP server or automatic recovery is introduced here.
 
 ## The controlled receiver
 

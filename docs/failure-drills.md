@@ -124,7 +124,7 @@ Executable check: `DeliveryIntegrationTest#httpToKafkaToWebhookAndIdenticalRepla
 
 The HTTP API validates shape and field constraints before publication. It does not perform synchronous receipt-identity checks.
 
-Submitting a valid event with an existing ID but a different message, seller, or `occurredAt` can therefore return `202`. During consumption, the store rejects the conflict and keeps the first receipt unchanged. The conflicting Kafka record goes to the dead-letter topic without another HTTP delivery. The dashboard intentionally keeps the original event view; it has no dead-letter-only record inspector yet.
+Submitting a valid event with an existing ID but a different message, seller, or `occurredAt` can therefore return `202`. During consumption, the store rejects the conflict and keeps the first receipt unchanged. The conflicting Kafka record goes to the dead-letter topic without another HTTP delivery. The dashboard intentionally keeps the original event view; use the read-only API below to inspect the conflicting record.
 
 Malformed broker JSON bypasses HTTP validation but is rejected by the consumer and retained in the dead-letter topic. It should not indefinitely prevent a following valid event from being delivered.
 
@@ -133,6 +133,42 @@ Executable checks:
 - `DeliveryIntegrationTest#conflictingEventIdGoesToDeadLetterWithoutChangingOriginal`
 - `DeliveryIntegrationTest#malformedBrokerMessageIsRetainedAndDoesNotBlockFollowingEvents`
 - `NotificationApiTest#invalidEventAndMalformedJsonAreRejectedBeforePublishing`
+
+## Inspect dead letters without advancing consumer offsets
+
+**Question:** Which record failed, why was it retained, and can we inspect it without triggering another delivery?
+
+After **Exhaust automatic attempts** reaches `FAILED`, copy the event ID from the dashboard. Replace `<event-id>` in this read-only request:
+
+```sh
+curl "http://127.0.0.1:8080/api/dead-letters?eventId=<event-id>&limit=20"
+```
+
+Windows PowerShell:
+
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:8080/api/dead-letters?eventId=<event-id>&limit=20' | ConvertTo-Json -Depth 6
+```
+
+Omit `eventId` to list recent dead letters, including malformed records that never created a receipt. The filter matches the exact Kafka key produced by the lab, not text inside the payload. Results are newest first by dead-letter offset. Each item includes a bounded payload preview, exception class/message, and original topic/partition/offset when its headers are available and valid. A conflicting-ID record can therefore show a changed payload while the original receipt stays unchanged.
+
+Repeat the request, then explicitly retry the failed event through the dashboard. Inspection does not modify delivery history; successful retry adds an attempt and leaves the original dead letter available until broker retention or restart removes it. The integration suite checks actual committed offsets and consumer-group inventory before and after repeated inspection.
+
+| Response field or status | Meaning |
+| --- | --- |
+| `startOffset`, `endOffsetExclusive` | Snapshot window searched in partition 0 of `notification.requests.DLT` |
+| `scannedRecords` | Records examined within that window; offset gaps are possible |
+| `earlierRecordsNotScanned` | Older retained offsets fell outside the latest-100-offset window |
+| `matchesTruncated` | More records matched within the window than the requested result limit |
+| `keyTruncated`, `payloadTruncated` | The returned text is a preview, not the complete original value |
+| `200` with empty `items` | No matching record in this window; not proof that the event never failed |
+| `400` | Invalid UUID/type or `limit` outside 1–100 (default 20) |
+| `429` | Another inspection is already running; retry later |
+| `503` | The scan could not complete, or the topic is missing/has unsupported partitioning; do not interpret this as an empty topic |
+
+The scan has a shared 3-second Kafka-operation budget plus up to 100 ms for closing its consumer. It supports this lab's single-partition topic only, and never joins a consumer group, commits offsets, creates topics, republishes records, or writes to H2. Kafka retention and the fresh embedded broker limit available history regardless of the window flags. This is an API diagnostic; a dashboard dead-letter view and full-history search remain follow-on work.
+
+Executable checks: [`DeadLetterInspectorTest`](../src/test/java/dev/sahreb/delivery/DeadLetterInspectorTest.java) covers bounds, deadlines, filtering and malformed headers. [`DeliveryIntegrationTest`](../src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) checks actual HTTP failures, conflicts, malformed broker records, and unchanged offsets/groups/receipts.
 
 ## Interpret uncertainty correctly
 

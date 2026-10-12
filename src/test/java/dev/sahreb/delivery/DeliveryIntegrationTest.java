@@ -15,15 +15,22 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sun.net.httpserver.HttpServer;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.ConsumerGroupListing;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -38,6 +45,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.datasource.url=jdbc:h2:mem:integration;DB_CLOSE_DELAY=-1",
@@ -130,10 +138,21 @@ class DeliveryIntegrationTest {
                     assertThat(deliveries.status(event.eventId()).status()).isEqualTo("FAILED"));
             assertDeadLetter(dlt, event.eventId().toString());
             assertThat(deliveries.status(event.eventId()).attempts()).hasSize(3);
+            var failedHistory = deliveries.status(event.eventId());
+            var inspection = inspectDeadLetters(event.eventId());
+            assertThat(inspection.path("items").size()).isEqualTo(1);
+            assertThat(inspection.at("/items/0/key").asText()).isEqualTo(event.eventId().toString());
+            assertThat(inspection.at("/items/0/payloadPreview").asText()).contains("Recovery drill");
+            assertThat(inspection.at("/items/0/originalTopic").asText()).isEqualTo(KafkaConfig.REQUESTS);
+            assertThat(inspection.at("/items/0/originalPartition").asInt()).isZero();
+            assertThat(inspection.at("/items/0/originalOffset").asLong()).isNotNegative();
+            assertThat(inspection.at("/items/0/exceptionCauseClass").asText()).endsWith("DeliveryException");
+            assertThat(deliveries.status(event.eventId())).isEqualTo(failedHistory);
             assertThat(post("/api/events/" + event.eventId() + "/retry", Map.of()).statusCode()).isEqualTo(202);
             delivered(event.eventId());
             assertThat(deliveries.status(event.eventId()).attempts()).hasSize(4);
             assertThat(EFFECTS.get(event.eventId().toString()).get()).isEqualTo(1);
+            assertThat(inspectDeadLetters(event.eventId()).path("items")).isEqualTo(inspection.path("items"));
             assertThat(post("/api/events/" + event.eventId() + "/retry", Map.of()).statusCode()).isEqualTo(409);
         }
     }
@@ -148,6 +167,9 @@ class DeliveryIntegrationTest {
             assertThat(post("/api/events", conflicting).statusCode()).isEqualTo(202);
             assertDeadLetter(dlt, event.eventId().toString());
         }
+        var conflict = inspectDeadLetters(event.eventId()).at("/items/0");
+        assertThat(conflict.path("payloadPreview").asText()).contains("Changed payload");
+        assertThat(conflict.path("exceptionCauseClass").asText()).endsWith("EventIdentityConflictException");
         assertThat(receipts.find(event.eventId()).orElseThrow().message()).isEqualTo("Original payload");
         assertThat(deliveries.status(event.eventId()).status()).isEqualTo("DELIVERED");
         assertThat(deliveries.status(event.eventId()).attempts()).hasSize(1);
@@ -181,9 +203,59 @@ class DeliveryIntegrationTest {
             template.send(KafkaConfig.REQUESTS, id, "{bad-json").get();
             assertDeadLetter(dlt, id);
         }
+        var malformed = inspectDeadLetters(UUID.fromString(id)).at("/items/0");
+        assertThat(malformed.path("key").asText()).isEqualTo(id);
+        assertThat(malformed.path("payloadPreview").asText()).isEqualTo("{bad-json");
+        assertThat(malformed.path("exceptionCauseClass").asText()).endsWith("InvalidEventException");
+        assertThat(receipts.find(UUID.fromString(id))).isEmpty();
         var event = event("After malformed message");
         post("/api/events", event);
         delivered(event.eventId());
+    }
+
+    @Test
+    void repeatedInspectionDoesNotCommitOffsetsJoinGroupsOrCreateReceipts() throws Exception {
+        UUID id = UUID.randomUUID();
+        var sent = template.send(KafkaConfig.REQUESTS, id.toString(), "{broken-for-offset-check")
+                .get(5, TimeUnit.SECONDS).getRecordMetadata();
+        var requests = new TopicPartition(KafkaConfig.REQUESTS, sent.partition());
+        try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, broker.getBrokersAsString()))) {
+            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+                var offsets = admin.listConsumerGroupOffsets("event-delivery-lab")
+                        .partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
+                assertThat(offsets).containsKey(requests);
+                assertThat(offsets.get(requests).offset()).isEqualTo(sent.offset() + 1);
+            });
+            var offsetsBefore = admin.listConsumerGroupOffsets("event-delivery-lab")
+                    .partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
+            var groupsBefore = admin.listConsumerGroups().all().get(5, TimeUnit.SECONDS).stream()
+                    .map(ConsumerGroupListing::groupId).sorted().toList();
+            long receiptsBefore = receipts.count();
+            var first = inspectDeadLetters(id);
+            assertThat(first.path("items").size()).isEqualTo(1);
+            assertThat(inspectDeadLetters(id)).isEqualTo(first);
+            assertThat(inspectDeadLetters(UUID.randomUUID()).path("items").isEmpty()).isTrue();
+            assertThat(admin.listConsumerGroupOffsets("event-delivery-lab")
+                    .partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS)).isEqualTo(offsetsBefore);
+            assertThat(admin.listConsumerGroups().all().get(5, TimeUnit.SECONDS).stream()
+                    .map(ConsumerGroupListing::groupId).sorted().toList()).isEqualTo(groupsBefore);
+            assertThat(receipts.count()).isEqualTo(receiptsBefore);
+            assertThat(receipts.find(id)).isEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"limit=0", "limit=101", "limit=nope", "eventId=not-a-uuid"})
+    void invalidDeadLetterQueriesAreRejected(String query) throws Exception {
+        assertThat(http.send(HttpRequest.newBuilder(uri("/api/dead-letters?" + query)).GET().build(),
+                HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(400);
+    }
+
+    private JsonNode inspectDeadLetters(UUID id) throws Exception {
+        var response = http.send(HttpRequest.newBuilder(uri("/api/dead-letters?eventId=" + id))
+                        .timeout(Duration.ofSeconds(6)).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).withFailMessage("Inspection failed: %s", response.body()).isEqualTo(200);
+        return json.readTree(response.body());
     }
 
     private NotificationEvent event(String message) {
