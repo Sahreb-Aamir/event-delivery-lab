@@ -93,6 +93,7 @@ The suite uses an embedded Kafka broker, real local HTTP receivers, and H2. Its 
 | Pending intent survives forced writer-process termination | [H2CrashDurabilityTest](src/test/java/dev/sahreb/delivery/H2CrashDurabilityTest.java) |
 | Full launcher: receiver observes the event, process is killed, history survives restart and explicit retry | [FullAppCrashRecoveryTest](src/test/java/dev/sahreb/delivery/FullAppCrashRecoveryTest.java) |
 | Dead-letter inspection: bounded snapshots, failures, and unchanged delivery-group offsets | [DeadLetterInspectorTest](src/test/java/dev/sahreb/delivery/DeadLetterInspectorTest.java), [DeliveryIntegrationTest](src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) |
+| Stalled broker connection: error response, connection cleanup, and a subsequent healthy inspection | [DeadLetterNetworkFailureTest](src/test/java/dev/sahreb/delivery/DeadLetterNetworkFailureTest.java) |
 | Request validation, broker acknowledgment failures, and receiver controls | [NotificationApiTest](src/test/java/dev/sahreb/delivery/NotificationApiTest.java) |
 
 The full Maven suite and documented local launch have been verified locally. The passing lost-acknowledgment comparison recorded two requests in both cases, two side effects without receiver deduplication, and one with it. See the [reproduction command and scope](docs/failure-drills.md#compare-naive-and-idempotent-receivers) before interpreting those numbers. [GitHub Actions](.github/workflows/verify.yml) is configured to run the Java suite on Java 17 and 21.

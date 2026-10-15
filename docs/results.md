@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–12, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
+Local verification: October 7–14, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -12,7 +12,7 @@ node --test src/test/js/delivery-tracker.test.cjs
 .\mvnw.cmd spring-boot:test-run@local-lab
 ```
 
-On October 12, the Java suite passed 67 tests with zero failures, errors, or skipped tests. The six dashboard state tests passed. The [workflow](../.github/workflows/verify.yml) also checks Java 17 and 21, plus the dashboard state tests on Node 22.
+On October 14, the Java suite passed 68 tests with zero failures, errors, or skipped tests. The six dashboard state tests passed. The [workflow](../.github/workflows/verify.yml) also checks Java 17 and 21, plus the dashboard state tests on Node 22.
 
 ## Lost acknowledgment: isolate the cause
 
@@ -70,13 +70,28 @@ The [focused command and evidence locations](failure-drills.md#force-stop-the-fu
 
 ## Read-only dead-letter inspection
 
-On October 12, the focused inspector and Kafka integration suites passed 23 checks, followed by the full 67-test Java suite. Actual broker failures produced inspectable HTTP-exhaustion, conflicting-payload, and malformed-JSON dead letters. The API returned the retained payload preview, application exception type, and source record coordinates; the malformed event remained absent from receipt storage.
+On October 12, the focused inspector and Kafka integration suites passed 23 checks, followed by the full 67-test Java suite. Real Kafka integration runs produced inspectable HTTP-exhaustion, conflicting-payload, and malformed-JSON dead letters. The API returned the retained payload preview, application exception type, and source record coordinates; the malformed event remained absent from receipt storage.
 
 Repeated HTTP inspection preserved the delivery group's committed offsets, consumer-group inventory, receipt count, and stored delivery history. After explicit retry succeeded, the original dead-letter item remained inspectable. An unknown event ID returned an empty snapshot, with the searched window still visible. Invalid query values returned `400`.
 
 Controlled consumer fixtures separately verified the latest-100-offset window, retention gaps, newest-match limits, exclusion of later appends, bounded previews, malformed headers, incomplete scans and broker failures returning `503`, and concurrent inspection returning `429`. Those fixtures are not a measurement of broker-outage latency. The scan budget covers Kafka operations rather than promising an absolute HTTP wall-clock deadline.
 
 Reproduce with the [API drill](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) or `./mvnw "-Dtest=DeadLetterInspectorTest,DeliveryIntegrationTest" test` (PowerShell: `.\mvnw.cmd "-Dtest=DeadLetterInspectorTest,DeliveryIntegrationTest" test`). These results cover the lab's single-partition, synthetic-data setup; they do not establish complete history, a production audit service, or multi-partition support.
+
+## Stalled Kafka connection and diagnostic recovery
+
+On October 14, [`DeadLetterNetworkFailureTest`](../src/test/java/dev/sahreb/delivery/DeadLetterNetworkFailureTest.java) used the production constructor with a real Kafka client against an owned loopback TCP peer that read a complete Kafka request but never replied. The factory supplied 60-second timeouts; the inspector applied its three-second budget.
+
+| Focused local run | Observed and asserted |
+| --- | --- |
+| Query while the first inspection was stalled | `429` |
+| Stalled inspection | Generic `503` in 3,129 ms; no successful empty snapshot or exception details |
+| Before fixture cleanup | Peer observed the client close its connection |
+| Same inspector pointed at a healthy embedded broker | `200` with the seeded synthetic dead letter |
+
+A negative control temporarily changed the inspector's timeout to 30 seconds. The test failed at its six-second future wait, then cleaned up the stalled request and sockets. The original source was restored before full verification. This shows the check detects a materially longer wait; the observed timing is not a performance benchmark.
+
+MockMvc exercises the controller and error mapping; the Kafka network transport is real. The experiment covers a peer that stalls negotiation/metadata, not every broker outage or a hard HTTP, DNS, TLS, or JVM deadline. The [focused drill](failure-drills.md#simulate-a-stalled-broker-connection) documents rerunning it and locating its JSON evidence in local and CI test artifacts.
 
 ## Interpretation
 

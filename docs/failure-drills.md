@@ -170,6 +170,26 @@ The scan has a shared 3-second Kafka-operation budget plus up to 100 ms for clos
 
 Executable checks: [`DeadLetterInspectorTest`](../src/test/java/dev/sahreb/delivery/DeadLetterInspectorTest.java) covers bounds, deadlines, filtering and malformed headers. [`DeliveryIntegrationTest`](../src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) checks actual HTTP failures, conflicts, malformed broker records, and unchanged offsets/groups/receipts.
 
+## Simulate a stalled broker connection
+
+**Question:** If a broker address accepts a connection but never responds, does inspection fail clearly and leave the next query usable?
+
+```sh
+./mvnw -Dtest=DeadLetterNetworkFailureTest test
+```
+
+Windows PowerShell:
+
+```powershell
+.\mvnw.cmd "-Dtest=DeadLetterNetworkFailureTest" test
+```
+
+[`DeadLetterNetworkFailureTest`](../src/test/java/dev/sahreb/delivery/DeadLetterNetworkFailureTest.java) uses the production inspector constructor and a real Kafka client. An owned loopback TCP peer accepts and reads client bytes but withholds all responses. The test checks the controller's `503` response, `429` for an overlapping inspection, and peer-observed connection closure. It then points the same inspector's dedicated connection configuration at a healthy embedded Kafka broker and requires a `200` response containing a seeded synthetic record.
+
+The servlet boundary is exercised with MockMvc; the Kafka transport is real. A generous test time limit catches a hung query without treating the observation as a performance benchmark or an absolute HTTP deadline. This covers stalled negotiation/metadata, not every outage timing or DNS, TLS, filesystem, or JVM failure. No running dashboard, database, or external broker is touched.
+
+Measured evidence is saved to `target/surefire-reports/dead-letter-network-stall.json` and included in CI test artifacts. Copy it before running `clean` if it is needed for investigation.
+
 ## Interpret uncertainty correctly
 
 | What you see | What to do |
