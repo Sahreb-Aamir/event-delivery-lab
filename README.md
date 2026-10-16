@@ -6,7 +6,7 @@ This local Java/Kafka lab makes that ambiguity reproducible. Send a synthetic no
 
 The dashboard includes controlled failure drills, an event inspector, HTTP attempt history, explicit recovery, and a receiver that deduplicates by `Idempotency-Key`. A separate automated experiment compares it with deliberately naive receiver behavior.
 
-[Run the failure drills](docs/failure-drills.md) · [Recorded results](docs/results.md) · [Architecture](docs/architecture.md) · [Project purpose](docs/project-brief.md)
+[Follow the demo walkthrough](docs/walkthrough.md) · [Run the failure drills](docs/failure-drills.md) · [Recorded results](docs/results.md) · [Architecture](docs/architecture.md) · [Project purpose](docs/project-brief.md)
 
 **Verified comparison:** the same lost-acknowledgment experiment produced two HTTP requests in both cases: **two side effects** with a naive receiver, **one** with receiver-side idempotency. [Reproduce and interpret the result](docs/results.md#lost-acknowledgment-isolate-the-cause).
 

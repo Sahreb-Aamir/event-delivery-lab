@@ -128,6 +128,7 @@ All paths use the local service, by default `http://127.0.0.1:8080`. JSON errors
 | `POST /api/events` | Event object below | `202` after broker acknowledgment; `400` invalid request; `503` acknowledgment unavailable |
 | `GET /api/events` | None | Newest 20 recorded events with receipt, status, and attempts |
 | `GET /api/events/{eventId}` | UUID | One recorded event, or `404` |
+| `GET /api/dead-letters` | Optional `eventId` UUID and `limit` 1–100 (default 20) | Bounded recent snapshot with search/truncation flags; `400` invalid input; `429` inspection busy; `503` scan unavailable/incomplete |
 | `POST /api/events/{eventId}/retry` | No body required | `202` for a `FAILED` or `INTERRUPTED` event; `409` for another state; `404` if unknown |
 | `GET /api/demo` | None | Receiver controls, global counters, and recorded deliveries |
 | `POST /api/demo/failures` | `{"count": 0}`; integer 0–10 | Set upcoming synthetic failures; return receiver state |

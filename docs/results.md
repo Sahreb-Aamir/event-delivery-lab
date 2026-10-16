@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–14, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
+Local verification: October 7–16, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -92,6 +92,14 @@ On October 14, [`DeadLetterNetworkFailureTest`](../src/test/java/dev/sahreb/deli
 A negative control temporarily changed the inspector's timeout to 30 seconds. The test failed at its six-second future wait, then cleaned up the stalled request and sockets. The original source was restored before full verification. This shows the check detects a materially longer wait; the observed timing is not a performance benchmark.
 
 MockMvc exercises the controller and error mapping; the Kafka network transport is real. The experiment covers a peer that stalls negotiation/metadata, not every broker outage or a hard HTTP, DNS, TLS, or JVM deadline. The [focused drill](failure-drills.md#simulate-a-stalled-broker-connection) documents rerunning it and locating its JSON evidence in local and CI test artifacts.
+
+## Guided walkthrough on a reused demo
+
+On October 16, the [three-stop walkthrough](walkthrough.md) was checked in the browser against the real local launcher, with a separate test database. One successful event was sent first so the counters were not zero. The lost-acknowledgment event then showed `NETWORK_ERROR`, `SUCCEEDED`, and one matching receiver record: process totals rose from 1 request / 1 effect to 3 requests / 2 effects. Exact replay left the two attempts and those totals unchanged; this UI observation alone does not prove that Kafka consumed the replay.
+
+A second scenario exhausted three HTTP `503` attempts. Both documented GET command forms returned its dead letter; repeated inspection left the stored event unchanged. Manual retry appended a fourth, `SUCCEEDED` attempt, preserving the original three and the dead letter at offset 0. The selected detail UUID differed from the composer's next-event UUID, as the walkthrough explains. No browser warnings or errors were observed. This manual check covers the stated path, not all UI interactions or accessibility behavior.
+
+After stopping the launcher, the two naive-versus-idempotent cases and all twelve Kafka integration cases passed. These independently exercise the comparison, consumed replay, and inspection/recovery claims linked from the walkthrough.
 
 ## Interpretation
 
