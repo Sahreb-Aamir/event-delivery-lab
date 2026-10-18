@@ -11,6 +11,7 @@ flowchart LR
     C -->|HTTP + Idempotency-Key| R[Controlled receiver]
     R --> E[In-memory effect per event ID]
     C -->|exhausted or invalid| DLT[notification.requests.DLT]
+    UI -->|read bounded snapshot through API| DLT
     UI -->|read state| DB
     UI -->|read receiver observations| R
 ```
@@ -76,6 +77,16 @@ The three-attempt policy is the normal HTTP-failure budget, not an absolute life
 
 The browser tracks acknowledged submissions until it observes a terminal result, including IDs that have not yet appeared as receipts or have left the latest-20 window. A manual retry captures the previous attempt count: an old `FAILED` or `INTERRUPTED` snapshot cannot be mistaken for completion of the newly accepted retry. Shared receiver controls remain locked until a new attempt reaches a terminal state. These pending observations live in the browser, not in a second delivery-state store.
 
+### Read-only dead-letter diagnostics
+
+`GET /api/dead-letters` creates a short-lived consumer for a snapshot of the latest 100 offset positions in the fixed dead-letter topic. Optional `eventId` matches the Kafka key; `limit` controls the newest 1–100 matches returned (default 20). The response exposes the searched interval, omitted-history/result flags, failure-header prefixes, and original record coordinates. Payload previews are capped at 2,048 UTF-16 code units, keys at 128, exception classes at 256, and exception messages at 512; arbitrary headers and stack traces are not returned.
+
+[`DeadLetterInspector`](../src/main/java/dev/sahreb/delivery/DeadLetterInspector.java) copies the configured broker connection settings, removes the consumer group/static-member identifiers, disables automatic commits and topic creation, then manually assigns partition 0 and seeks to the bounded start. [Kafka's consumer API](https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/clients/consumer/KafkaConsumer.java) separates manual assignment from group subscription and offset commits. The inspector never calls either subscription or commit methods. It has no producer or database dependency.
+
+Metadata, offset lookups and polling share a 3-second budget, followed by a consumer close of at most 100 ms. A semaphore admits one query at a time; concurrent requests receive `429`. A timed-out/incomplete scan or unsupported topic topology returns `503`, rather than a successful empty result. The snapshot excludes records appended after its captured end offset. Offset gaps and retention are possible; a missing match is not a full-history conclusion. Only the lab's single partition is supported. The 64 KiB fetch settings are targets, not hard heap limits: Kafka may return an oversized first batch so consumption can progress.
+
+The [failure guide](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) gives requests and interpretation. This API is a diagnostic foundation for a later read-only MCP companion; no MCP server or automatic recovery is introduced here.
+
 ## The controlled receiver
 
 [`DemoReceiverController`](../src/main/java/dev/sahreb/delivery/DemoReceiverController.java) stores a synthetic effect in an in-memory map keyed by event ID. The idempotency header must equal the body's ID. A repeated identical payload returns success with `duplicate: true`; a conflicting payload returns `409`.
@@ -117,6 +128,7 @@ All paths use the local service, by default `http://127.0.0.1:8080`. JSON errors
 | `POST /api/events` | Event object below | `202` after broker acknowledgment; `400` invalid request; `503` acknowledgment unavailable |
 | `GET /api/events` | None | Newest 20 recorded events with receipt, status, and attempts |
 | `GET /api/events/{eventId}` | UUID | One recorded event, or `404` |
+| `GET /api/dead-letters` | Optional `eventId` UUID and `limit` 1–100 (default 20) | Bounded recent snapshot with search/truncation flags; `400` invalid input; `429` inspection busy; `503` scan unavailable/incomplete |
 | `POST /api/events/{eventId}/retry` | No body required | `202` for a `FAILED` or `INTERRUPTED` event; `409` for another state; `404` if unknown |
 | `GET /api/demo` | None | Receiver controls, global counters, and recorded deliveries |
 | `POST /api/demo/failures` | `{"count": 0}`; integer 0–10 | Set upcoming synthetic failures; return receiver state |

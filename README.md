@@ -6,7 +6,7 @@ This local Java/Kafka lab makes that ambiguity reproducible. Send a synthetic no
 
 The dashboard includes controlled failure drills, an event inspector, HTTP attempt history, explicit recovery, and a receiver that deduplicates by `Idempotency-Key`. A separate automated experiment compares it with deliberately naive receiver behavior.
 
-[Run the failure drills](docs/failure-drills.md) · [Recorded results](docs/results.md) · [Architecture](docs/architecture.md) · [Project purpose](docs/project-brief.md)
+[Follow the demo walkthrough](docs/walkthrough.md) · [Run the failure drills](docs/failure-drills.md) · [Recorded results](docs/results.md) · [Architecture](docs/architecture.md) · [Project purpose](docs/project-brief.md)
 
 **Verified comparison:** the same lost-acknowledgment experiment produced two HTTP requests in both cases: **two side effects** with a naive receiver, **one** with receiver-side idempotency. [Reproduce and interpret the result](docs/results.md#lost-acknowledgment-isolate-the-cause).
 
@@ -59,6 +59,8 @@ The default HTTP, embedded broker, and controller listeners use `127.0.0.1`. Thi
 
 Run one scenario at a time: injected failures and delayed acknowledgments share receiver-wide counters. The [failure guide](docs/failure-drills.md) covers temporary errors, exhausted attempts, manual recovery, and the naive-versus-idempotent comparison.
 
+For a failed event, the [read-only dead-letter API](docs/failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) shows its retained Kafka record, failure headers, and original record location. It also exposes malformed records that never created a receipt. Queries inspect a bounded recent window and do not advance consumer offsets or trigger delivery.
+
 ## What this demonstrates
 
 | Boundary | What the lab records | What it does not establish |
@@ -90,6 +92,8 @@ The suite uses an embedded Kafka broker, real local HTTP receivers, and H2. Its 
 | Attempt/state transactions, retained history, and uncertain pending attempts | [DeliveryStoreTest](src/test/java/dev/sahreb/delivery/DeliveryStoreTest.java) |
 | Pending intent survives forced writer-process termination | [H2CrashDurabilityTest](src/test/java/dev/sahreb/delivery/H2CrashDurabilityTest.java) |
 | Full launcher: receiver observes the event, process is killed, history survives restart and explicit retry | [FullAppCrashRecoveryTest](src/test/java/dev/sahreb/delivery/FullAppCrashRecoveryTest.java) |
+| Dead-letter inspection: bounded snapshots, failures, and unchanged delivery-group offsets | [DeadLetterInspectorTest](src/test/java/dev/sahreb/delivery/DeadLetterInspectorTest.java), [DeliveryIntegrationTest](src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) |
+| Stalled broker connection: error response, connection cleanup, and a subsequent healthy inspection | [DeadLetterNetworkFailureTest](src/test/java/dev/sahreb/delivery/DeadLetterNetworkFailureTest.java) |
 | Request validation, broker acknowledgment failures, and receiver controls | [NotificationApiTest](src/test/java/dev/sahreb/delivery/NotificationApiTest.java) |
 
 The full Maven suite and documented local launch have been verified locally. The passing lost-acknowledgment comparison recorded two requests in both cases, two side effects without receiver deduplication, and one with it. See the [reproduction command and scope](docs/failure-drills.md#compare-naive-and-idempotent-receivers) before interpreting those numbers. [GitHub Actions](.github/workflows/verify.yml) is configured to run the Java suite on Java 17 and 21.
@@ -121,11 +125,11 @@ Kafka makes the queue/consumer boundary visible for the experiment. A simple web
 - The controlled receiver's effects and deduplication map are **in memory** and reset with the application. A stored sender receipt and an empty receiver after restart are possible.
 - One partition and one consumer keep the experiment understandable. This is not a distributed delivery-claim or scheduling implementation.
 - HTTP failures get up to **3 attempts**, with **250 ms** between retries and a default **1,000 ms** exchange timeout. Storage failures instead retry indefinitely at 1-second intervals and can stall the partition; they are not silently discarded to the dead-letter topic.
-- Failed or interrupted valid events can be inspected and explicitly retried in the dashboard. Malformed broker messages and conflicting IDs go to the dead-letter topic; there is no dead-letter browser yet.
+- Failed or interrupted valid events can be inspected and explicitly retried in the dashboard. Malformed broker messages and conflicting IDs go to the dead-letter topic. Its read-only API searches the latest 100 offset positions in the lab's single partition; a dashboard view and full-history search are not implemented.
 - Submission is asynchronous: an accepted event can temporarily return `404` before its receipt exists. A same-ID/different-payload submission can return `202`, then be rejected by the consumer while the original receipt remains unchanged.
 
 The [architecture](docs/architecture.md) documents crash windows, API responses, storage lifetimes, and running against your own broker.
 
 ## Next useful steps
 
-Add a read-only dead-letter inspector, persist receiver idempotency records, and automate restart/crash experiments against a persistent broker. Read-only MCP diagnostics are a follow-on; they are not part of this release.
+Add a dashboard view for dead letters, persist receiver idempotency records, and automate restart/crash experiments against a persistent broker. Read-only MCP diagnostics can build on the bounded diagnostic API; an MCP companion is not part of this release.
