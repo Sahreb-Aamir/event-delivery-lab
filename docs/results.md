@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–16, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests used Node 24.14.1. The application itself does not require Node.
+Local verification: October 7–19, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -100,6 +100,12 @@ On October 16, the [three-stop walkthrough](walkthrough.md) was checked in the b
 A second scenario exhausted three HTTP `503` attempts. Both documented GET command forms returned its dead letter; repeated inspection left the stored event unchanged. Manual retry appended a fourth, `SUCCEEDED` attempt, preserving the original three and the dead letter at offset 0. The selected detail UUID differed from the composer's next-event UUID, as the walkthrough explains. No browser warnings or errors were observed. This manual check covers the stated path, not all UI interactions or accessibility behavior.
 
 After stopping the launcher, the two naive-versus-idempotent cases and all twelve Kafka integration cases passed. These independently exercise the comparison, consumed replay, and inspection/recovery claims linked from the walkthrough.
+
+## Read-only MCP event diagnostics
+
+On October 19, the [MCP companion](../diagnostics/README.md) was checked against the real local Java/Kafka launcher and an isolated database. Synthetic event `3c9aa7e6-1c1a-4b2f-ae32-a8f74a2f0abb` produced `NETWORK_ERROR`, then `SUCCEEDED`. A real MCP stdio call returned both sender attempts; a limit of one returned only the successful attempt, with `totalAttempts: 2` and `attemptsTruncated: true`. Repeated MCP reads left the API's event history and receiver state unchanged.
+
+A missing UUID returned `not_recorded` with the asynchronous-consumption caveat. After the launcher stopped, the client returned `unavailable` and exited with failure. Eight automated companion tests passed, including real stdio discovery/calls, HTTP failure fixtures, a stalled response body that timed out in about three seconds, and subsequent recovery. These checks establish the tested read path, not model reasoning quality, tenant isolation, or receiver-side completion.
 
 ## Interpretation
 

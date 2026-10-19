@@ -5,6 +5,20 @@ on:
 permissions:
   contents: read
 jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: diagnostics
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: diagnostics/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
   dashboard-state:
     runs-on: ubuntu-latest
     steps:

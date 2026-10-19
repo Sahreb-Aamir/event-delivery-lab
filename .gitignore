@@ -4,6 +4,8 @@ data/
 *.log
 .env
 .env.*
+diagnostics/node_modules/
+diagnostics/dist/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
