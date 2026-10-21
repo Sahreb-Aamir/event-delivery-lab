@@ -59,4 +59,17 @@ npm test
 
 Tests use a real MCP stdio client/server and owned loopback HTTP fixtures: discovery/schemas, invalid input before HTTP access, history/Unicode bounds, unknown IDs, redacted errors, malformed responses, identity/order checks, oversized streaming bodies, refused redirects, stalled-body deadline, admission, cancellation, and recovery. They complement the Java/Kafka suite and [recorded real-lab check](../docs/results.md#read-only-mcp-event-diagnostics).
 
+### Check cancellation through MCP
+
+From `diagnostics`, run the focused protocol check (also included in `npm test`):
+
+```sh
+npm run build
+node --test dist/test/protocol-recovery.test.js
+```
+
+[`protocol-recovery.test.ts`](test/protocol-recovery.test.ts) uses the actual stdio server process and SDK client. Its HTTP peer starts a response but withholds the body. The tool must return an MCP error result with `TIMEOUT`, close that request, and remain responsive. It then fills all four inspection slots, verifies the fifth call returns `BUSY` without HTTP access, and cancels the four requests through the MCP client.
+
+The initiating client observes rejected calls after cancellation. The test separately requires all four HTTP responses to close before fixture cleanup, then holds four fresh responses until every slot is admitted again. This distinguishes cancelling the client-side wait from actually releasing server-side work. Test diagnostics record the observed timing and counts in local/CI logs. These are controlled transport checks, not hard cancellation-latency guarantees or a Java-broker outage experiment.
+
 Dependencies are pinned in `package-lock.json`. Development is AI-assisted and synthetic-only. Reference: [official TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x); its installed `examples/server/mcpServerOutputSchema.js` demonstrates the structured output API used here.

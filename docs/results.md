@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–19, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
+Local verification: October 7–21, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -106,6 +106,14 @@ After stopping the launcher, the two naive-versus-idempotent cases and all twelv
 On October 19, the [MCP companion](../diagnostics/README.md) was checked against the real local Java/Kafka launcher and an isolated database. Synthetic event `3c9aa7e6-1c1a-4b2f-ae32-a8f74a2f0abb` produced `NETWORK_ERROR`, then `SUCCEEDED`. A real MCP stdio call returned both sender attempts; a limit of one returned only the successful attempt, with `totalAttempts: 2` and `attemptsTruncated: true`. Repeated MCP reads left the API's event history and receiver state unchanged.
 
 A missing UUID returned `not_recorded` with the asynchronous-consumption caveat. After the launcher stopped, the client returned `unavailable` and exited with failure. Eight automated companion tests passed, including real stdio discovery/calls, HTTP failure fixtures, a stalled response body that timed out in about three seconds, and subsequent recovery. These checks establish the tested read path, not model reasoning quality, tenant isolation, or receiver-side completion.
+
+## MCP cancellation across the protocol boundary
+
+On October 21, the [protocol recovery check](../diagnostics/README.md#check-cancellation-through-mcp) exercised the production stdio process with a real SDK client and an owned HTTP peer. A stalled response body produced an MCP error result with `TIMEOUT` in about three seconds, without returning partial upstream data. The peer observed the timed-out response close while the process remained available to MCP ping.
+
+Four additional stalled calls filled the admission limit; the fifth returned `BUSY` without another HTTP request. Cancelling the four MCP calls rejected their client promises and closed all four HTTP responses before fixture cleanup. Four fresh calls were then admitted simultaneously and returned validated results. Holding their responses until all four arrived prevents sequential success from masking a leaked slot.
+
+A negative control temporarily removed forwarding of the MCP cancellation signal. Client calls still rejected, but the test failed because the HTTP responses did not close within its observation guard. The source was restored before passing checks. All nine companion tests passed. This verifies the tested cancellation path, not a general distributed-cancellation guarantee; the peer is a controlled HTTP fixture rather than the Java/Kafka service.
 
 ## Interpretation
 
