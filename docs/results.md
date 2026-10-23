@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–21, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
+Local verification: October 7–23, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -114,6 +114,12 @@ On October 21, the [protocol recovery check](../diagnostics/README.md#check-canc
 Four additional stalled calls filled the admission limit; the fifth returned `BUSY` without another HTTP request. Cancelling the four MCP calls rejected their client promises and closed all four HTTP responses before fixture cleanup. Four fresh calls were then admitted simultaneously and returned validated results. Holding their responses until all four arrived prevents sequential success from masking a leaked slot.
 
 A negative control temporarily removed forwarding of the MCP cancellation signal. Client calls still rejected, but the test failed because the HTTP responses did not close within its observation guard. The source was restored before passing checks. All nine companion tests passed. This verifies the tested cancellation path, not a general distributed-cancellation guarantee; the peer is a controlled HTTP fixture rather than the Java/Kafka service.
+
+## MCP walkthrough after manual recovery
+
+On October 23, the [optional MCP walkthrough step](walkthrough.md#optional-inspect-the-recovered-event-through-mcp) was checked against the real local launcher with an isolated database. Dashboard controls exhausted three HTTP `503` attempts for synthetic event `ef24e301-3ce6-4506-90f9-da07635956cd`; an MCP read returned `FAILED` and all three attempts. Explicit dashboard retry then added a fourth, `SUCCEEDED` attempt.
+
+The documented `npm run inspect` command returned the recovered event's four attempts. Its limit-of-one variant returned only `SUCCEEDED`, with `totalAttempts: 4` and `attemptsTruncated: true`. Event history, receiver API state, and the original dead-letter record at offset 0 were unchanged across the MCP reads. This checked the recovery/inspection path and bounded-view interpretation; it did not evaluate a model's diagnosis or assert receiver effects from MCP output.
 
 ## Interpretation
 

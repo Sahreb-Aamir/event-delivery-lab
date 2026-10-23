@@ -20,6 +20,8 @@ Replace the placeholder, including angle brackets, with the actual UUID. These c
 
 `inspect` is a real MCP client: it initializes the stdio server, calls `inspect_event`, prints structured output, and closes its child process. The first call should show `NETWORK_ERROR` followed by `SUCCEEDED`. The second returns only the latest attempt, with `totalAttempts: 2` and `attemptsTruncated: true`. This reads sender evidence, not receiver-side effects.
 
+For an exhausted event that was manually retried, follow the [guided MCP recovery example](../docs/walkthrough.md#optional-inspect-the-recovered-event-through-mcp). It compares the retained failures with a bounded view of the successful attempt.
+
 ## Connect an MCP client
 
 Build once, then configure your client's stdio server entry:
