@@ -85,7 +85,7 @@ The browser tracks acknowledged submissions until it observes a terminal result,
 
 Metadata, offset lookups and polling share a 3-second budget, followed by a consumer close of at most 100 ms. A semaphore admits one query at a time; concurrent requests receive `429`. A timed-out/incomplete scan or unsupported topic topology returns `503`, rather than a successful empty result. The snapshot excludes records appended after its captured end offset. Offset gaps and retention are possible; a missing match is not a full-history conclusion. Only the lab's single partition is supported. The 64 KiB fetch settings are targets, not hard heap limits: Kafka may return an oversized first batch so consumption can progress.
 
-The [failure guide](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) gives requests and interpretation. This API is a diagnostic foundation for a later read-only MCP companion; no MCP server or automatic recovery is introduced here.
+The [failure guide](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) gives requests and interpretation. The optional [MCP companion](../diagnostics/README.md) currently exposes only event/attempt inspection through `GET /api/events/{eventId}`. A bounded dead-letter tool is follow-on work; recovery remains an explicit action outside MCP.
 
 ## The controlled receiver
 

@@ -104,7 +104,7 @@ The dashboard's pending-receipt and retry-race checks use Node's built-in test r
 node --test src/test/js/delivery-tracker.test.cjs
 ```
 
-Node is needed only for these frontend checks, not to run the application.
+Node is used for these frontend checks and the optional MCP companion. The Java application runs without it.
 
 The [automated crash drill](docs/failure-drills.md#force-stop-the-full-application) uses a separate process and database. It saves receiver observations, database snapshots, application logs, and recovery results under `target/crash-probe/` so a failure can be investigated.
 
@@ -130,6 +130,12 @@ Kafka makes the queue/consumer boundary visible for the experiment. A simple web
 
 The [architecture](docs/architecture.md) documents crash windows, API responses, storage lifetimes, and running against your own broker.
 
+## Read-only MCP diagnostics
+
+The [read-only MCP companion](diagnostics/README.md) exposes one typed event-inspection tool over the existing API. It lets an MCP client inspect recent sender attempts without publishing or retrying events. Node is optional; the Java workbench runs independently.
+
+[Try the MCP step after manual recovery](docs/walkthrough.md#optional-inspect-the-recovered-event-through-mcp) to compare complete attempt history with a one-attempt view. The terminal demo needs no model or API key.
+
 ## Next useful steps
 
-Add a dashboard view for dead letters, persist receiver idempotency records, and automate restart/crash experiments against a persistent broker. Read-only MCP diagnostics can build on the bounded diagnostic API; an MCP companion is not part of this release.
+Add a bounded MCP dead-letter tool, a dashboard view for dead letters, persistent receiver idempotency records, and restart/crash experiments against a persistent broker.
