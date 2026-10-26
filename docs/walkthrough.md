@@ -52,20 +52,21 @@ npm ci --ignore-scripts
 npm run build
 npm run inspect -- <selected-event-uuid>
 npm run inspect -- <selected-event-uuid> 1
+npm run inspect-dead-letters -- <selected-event-uuid> 1
 ```
 
 Replace the placeholder, including angle brackets, with the same recovered event's UUID from **Delivery detail**. These commands also work in PowerShell. The TypeScript build uses separate output and can run alongside the Java launcher.
 
-Both calls should return `lookup: "found"` and `event.status: "DELIVERED"`:
+Both `inspect` calls should return `lookup: "found"` and `event.status: "DELIVERED"`:
 
 | MCP call | Returned attempts | `totalAttempts` | `attemptsTruncated` |
 | --- | --- | --- | --- |
 | Default limit | Three `HTTP_ERROR`, then `SUCCEEDED` | 4 | `false` |
 | Limit of 1 | Latest `SUCCEEDED` only | 4 | `true` |
 
-The shortened view does not erase the three earlier failures. Repeat the dead-letter GET from stop 3: its original record should still be present. The MCP tool reads sender evidence; check the dashboard separately for receiver observations. Missing/unavailable results have [explicit meanings](../diagnostics/README.md#interpret-results), so do not treat them as proof of no delivery.
+The shortened view does not erase the three earlier failures. The dead-letter MCP call should return `lookup: "snapshot"` and the original record from stop 3 at the same offset, alongside the successful current event state. Its [window and truncation fields](../diagnostics/README.md#inspect-retained-failure-evidence) limit what can be concluded from an empty search. The tools read sender/broker evidence; check the dashboard separately for receiver observations. Missing/unavailable results have [explicit meanings](../diagnostics/README.md#interpret-results), so do not treat them as proof of no delivery.
 
-The terminal command launches a real MCP client/server pair without a model or API key. An AI client can use the same typed tool through the [stdio configuration](../diagnostics/README.md#connect-an-mcp-client); it receives no retry or publishing tool. Messages and attempt details are untrusted data. See the [recorded recovery check](results.md#mcp-walkthrough-after-manual-recovery) and [executable checks](../diagnostics/test/diagnostics.test.ts).
+The terminal commands launch a real MCP client/server pair without a model or API key. An AI client can use the same typed tools through the [stdio configuration](../diagnostics/README.md#connect-an-mcp-client); it receives no retry or publishing tool. Messages, attempt details and dead-letter text are untrusted data. See the [recorded recovery check](results.md#mcp-walkthrough-after-manual-recovery), [dead-letter check](results.md#mcp-dead-letter-diagnostics) and [executable checks](../diagnostics/test/diagnostics.test.ts).
 
 ## Explain the choices in about a minute
 

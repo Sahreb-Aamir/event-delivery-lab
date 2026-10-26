@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–23, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
+Local verification: October 7–26, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -120,6 +120,14 @@ A negative control temporarily removed forwarding of the MCP cancellation signal
 On October 23, the [optional MCP walkthrough step](walkthrough.md#optional-inspect-the-recovered-event-through-mcp) was checked against the real local launcher with an isolated database. Dashboard controls exhausted three HTTP `503` attempts for synthetic event `ef24e301-3ce6-4506-90f9-da07635956cd`; an MCP read returned `FAILED` and all three attempts. Explicit dashboard retry then added a fourth, `SUCCEEDED` attempt.
 
 The documented `npm run inspect` command returned the recovered event's four attempts. Its limit-of-one variant returned only `SUCCEEDED`, with `totalAttempts: 4` and `attemptsTruncated: true`. Event history, receiver API state, and the original dead-letter record at offset 0 were unchanged across the MCP reads. This checked the recovery/inspection path and bounded-view interpretation; it did not evaluate a model's diagnosis or assert receiver effects from MCP output.
+
+## MCP dead-letter diagnostics
+
+On October 26, the [dead-letter MCP commands](../diagnostics/README.md#inspect-retained-failure-evidence) were checked against the real Java/Kafka launcher with an isolated database. Two synthetic events each exhausted three HTTP `503` attempts. The model-free MCP client returned a filtered record for `01ccd3d2-cc0c-440c-8f6a-8306be6d1c84` at offset 0. An unfiltered limit-of-one call returned the newer record with `scannedRecords: 2` and `matchesTruncated: true`. A missing UUID returned an empty successful snapshot that still reported the two-record search window.
+
+An explicit API retry recovered the first event. MCP then returned its four attempts ending in `SUCCEEDED`, while dead-letter inspection retained the same original record and window. Event history, receiver state and dead-letter snapshots were unchanged across the inspection calls, both before and after recovery. The receiver reported seven requests and one effect across the two events; this observation came from its separate API, not from the MCP output. The launcher was then stopped; this was not a crash-persistence experiment.
+
+All 17 companion tests, 68 Java tests and six dashboard tests passed locally. New protocol fixtures cover bounded/sparse windows, null metadata, malformed responses, unsafe offsets, failure responses, redirects and shared admission. A stalled dead-letter HTTP body timed out in 3,024 ms and closed before fixture cleanup. Cancelling four mixed event/dead-letter calls closed their HTTP responses and restored all four slots (observed close time 7 ms). These fixture timings are observations, not guarantees about Java/Kafka cancellation or model reasoning. The [existing Java inspection checks](#read-only-dead-letter-inspection) separately cover unchanged consumer offsets.
 
 ## Interpretation
 

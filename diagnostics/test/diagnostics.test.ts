@@ -49,7 +49,7 @@ test("real MCP stdio discovery, schemas, bounded output and GET-only transport",
   try {
     await client.connect(transport);
     const tools = await client.listTools();
-    assert.deepEqual(tools.tools.map(tool => tool.name), ["inspect_event"]);
+    assert.deepEqual(tools.tools.map(tool => tool.name), ["inspect_event", "inspect_dead_letters"]);
     assert.equal(tools.tools[0]!.annotations?.readOnlyHint, true);
     assert(tools.tools[0]!.outputSchema);
     await client.ping();
