@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/src/index.js",
     "inspect": "node dist/src/inspect.js",
+    "inspect-dead-letters": "node dist/src/inspect-dead-letters.js",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {

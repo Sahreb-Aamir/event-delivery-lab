@@ -132,10 +132,10 @@ The [architecture](docs/architecture.md) documents crash windows, API responses,
 
 ## Read-only MCP diagnostics
 
-The [read-only MCP companion](diagnostics/README.md) exposes one typed event-inspection tool over the existing API. It lets an MCP client inspect recent sender attempts without publishing or retrying events. Node is optional; the Java workbench runs independently.
+The [read-only MCP companion](diagnostics/README.md) exposes typed event and dead-letter inspection over the existing API. An MCP client can compare current sender attempts with retained failure evidence, with explicit limits on the history searched. Node is optional; the Java workbench runs independently.
 
 [Try the MCP step after manual recovery](docs/walkthrough.md#optional-inspect-the-recovered-event-through-mcp) to compare complete attempt history with a one-attempt view. The terminal demo needs no model or API key.
 
 ## Next useful steps
 
-Add a bounded MCP dead-letter tool, a dashboard view for dead letters, persistent receiver idempotency records, and restart/crash experiments against a persistent broker.
+Add a dashboard view for dead letters, persistent receiver idempotency records, and restart/crash experiments against a persistent broker.
