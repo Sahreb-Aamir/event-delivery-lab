@@ -59,7 +59,7 @@ The default HTTP, embedded broker, and controller listeners use `127.0.0.1`. Thi
 
 Run one scenario at a time: injected failures and delayed acknowledgments share receiver-wide counters. The [failure guide](docs/failure-drills.md) covers temporary errors, exhausted attempts, manual recovery, and the naive-versus-idempotent comparison.
 
-For a failed event, the [read-only dead-letter API](docs/failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) shows its retained Kafka record, failure headers, and original record location. It also exposes malformed records that never created a receipt. Queries inspect a bounded recent window and do not advance consumer offsets or trigger delivery.
+The dashboard's **Dead-letter inspector** shows retained Kafka records, failure headers, and original record locations. Paste an event UUID to filter, or leave it empty to include malformed records that never created a receipt. Each manual query shows its search window and omitted-result flags; it does not advance consumer offsets or trigger delivery. The same [read-only API](docs/failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) is available from a terminal.
 
 ## What this demonstrates
 
@@ -98,10 +98,10 @@ The suite uses an embedded Kafka broker, real local HTTP receivers, and H2. Its 
 
 The full Maven suite and documented local launch have been verified locally. The passing lost-acknowledgment comparison recorded two requests in both cases, two side effects without receiver deduplication, and one with it. See the [reproduction command and scope](docs/failure-drills.md#compare-naive-and-idempotent-receivers) before interpreting those numbers. [GitHub Actions](.github/workflows/verify.yml) is configured to run the Java suite on Java 17 and 21.
 
-The dashboard's pending-receipt and retry-race checks use Node's built-in test runner, with no npm dependencies:
+The dashboard's pending-receipt, retry-race, and dead-letter inspection checks use Node's built-in test runner, with no npm dependencies:
 
 ```sh
-node --test src/test/js/delivery-tracker.test.cjs
+node --test src/test/js/*.test.cjs
 ```
 
 Node is used for these frontend checks and the optional MCP companion. The Java application runs without it.
@@ -125,7 +125,7 @@ Kafka makes the queue/consumer boundary visible for the experiment. A simple web
 - The controlled receiver's effects and deduplication map are **in memory** and reset with the application. A stored sender receipt and an empty receiver after restart are possible.
 - One partition and one consumer keep the experiment understandable. This is not a distributed delivery-claim or scheduling implementation.
 - HTTP failures get up to **3 attempts**, with **250 ms** between retries and a default **1,000 ms** exchange timeout. Storage failures instead retry indefinitely at 1-second intervals and can stall the partition; they are not silently discarded to the dead-letter topic.
-- Failed or interrupted valid events can be inspected and explicitly retried in the dashboard. Malformed broker messages and conflicting IDs go to the dead-letter topic. Its read-only API searches the latest 100 offset positions in the lab's single partition; a dashboard view and full-history search are not implemented.
+- Failed or interrupted valid events can be inspected and explicitly retried in the dashboard. Malformed broker messages and conflicting IDs go to the dead-letter topic. Its read-only inspector searches the latest 100 offset positions in the lab's single partition; full-history search and repair of malformed records are not implemented.
 - Submission is asynchronous: an accepted event can temporarily return `404` before its receipt exists. A same-ID/different-payload submission can return `202`, then be rejected by the consumer while the original receipt remains unchanged.
 
 The [architecture](docs/architecture.md) documents crash windows, API responses, storage lifetimes, and running against your own broker.
@@ -138,4 +138,4 @@ The [read-only MCP companion](diagnostics/README.md) exposes typed event and dea
 
 ## Next useful steps
 
-Add a dashboard view for dead letters, persistent receiver idempotency records, and restart/crash experiments against a persistent broker.
+Investigate persistent receiver idempotency records and restart/crash experiments against a persistent broker.

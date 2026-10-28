@@ -24,7 +24,9 @@ The consumer skips HTTP after a recorded success. A UI snapshot alone cannot pro
 
 Choose **Exhaust automatic attempts**. Wait for `FAILED` and three HTTP `503` attempts. Copy **Event ID from Delivery detail**, not the composer: the composer already contains the next ID.
 
-Replace `<selected-event-uuid>` below. macOS/Linux:
+Paste that UUID into **Dead-letter inspector**, leave the limit at 10, and choose **Inspect dead letters**. Expand the matching record and note its offset, payload preview, failure headers and source coordinates. The panel displays the searched window and whether older history or additional matches were omitted.
+
+For the equivalent API query, replace `<selected-event-uuid>` below. macOS/Linux:
 
 ```sh
 curl "http://127.0.0.1:8080/api/dead-letters?eventId=<selected-event-uuid>&limit=20"
@@ -38,7 +40,7 @@ Invoke-RestMethod 'http://127.0.0.1:8080/api/dead-letters?eventId=<selected-even
 
 Expect a matching key, failure headers, original record coordinates, and the searched `startOffset`/`endOffsetExclusive` window. Note the item's dead-letter `offset`. Repeat the GET: inspection should leave delivery history unchanged.
 
-Set **Fail next receiver requests** to `0`, choose **Apply**, then **Retry this event**. Expect `DELIVERED` with four total attempts. Repeat the GET: the original dead letter should remain at the same offset. Recovery adds an attempt; it does not erase the failure evidence. The [integration checks](../src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) also verify unchanged committed offsets, consumer groups, and receipt count during inspection.
+Set **Fail next receiver requests** to `0`, choose **Apply**, then **Retry this event**. Expect `DELIVERED` with four total attempts. Choose **Inspect dead letters** again (or repeat the GET): the original dead letter should remain at the same offset. Recovery adds an attempt; it does not erase the failure evidence. The [integration checks](../src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) also verify unchanged committed offsets, consumer groups, and receipt count during inspection.
 
 This API searches only the latest 100 offset positions. An empty result is not a full-history conclusion; retention and broker restart can remove records. See [response interpretation](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets).
 

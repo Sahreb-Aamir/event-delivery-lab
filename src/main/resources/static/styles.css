@@ -1756,3 +1756,103 @@ footer p {
   color: #846b42;
   background: #f5efdf;
 }
+
+.dlt-panel .panel-heading {
+  margin-bottom:14px
+}
+
+.dlt-query-controls {
+  display:flex;
+  align-items:flex-end;
+  gap:14px;
+  margin-top:15px
+}
+
+.dlt-query-controls>div {
+  flex:0 0 95px
+}
+
+.dlt-query-controls .button {
+  flex:1;
+  margin:0
+}
+
+.dlt-status {
+  font-size:11px;
+  color:#58737d;
+  line-height:1.7;
+  overflow-wrap:anywhere;
+  margin:17px 0
+}
+
+.dlt-error {
+  color:var(--red)
+}
+
+.dlt-summary,.dlt-record-fields {
+  display:grid;
+  gap:12px;
+  margin:0;
+  padding:15px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#f8fafa
+}
+
+.dlt-summary dd,.dlt-record-fields dd {
+  line-height:1.65
+}
+
+.dlt-empty {
+  font-size:12px;
+  line-height:1.7;
+  color:#5f7780;
+  padding:14px 0 0;
+  margin:0
+}
+
+.dlt-record {
+  margin-top:12px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  overflow:hidden
+}
+
+.dlt-record summary {
+  padding:12px 14px;
+  cursor:pointer;
+  font-size:11px;
+  font-weight:650;
+  overflow-wrap:anywhere
+}
+
+.dlt-record summary:focus-visible {
+  outline:3px solid #69c9c2;
+  outline-offset:-3px
+}
+
+.dlt-record-fields {
+  border:0;
+  border-top:1px solid var(--line);
+  border-radius:0
+}
+
+.dlt-payload {
+  white-space:pre-wrap
+}
+
+.dlt-panel .dlt-caveat {
+  text-align:left;
+  margin:17px 0 0;
+  line-height:1.75
+}
+
+@media(max-width:380px) {
+  .dlt-query-controls {
+    align-items:stretch;
+    flex-direction:column
+  }
+  .dlt-query-controls>div {
+    flex-basis:auto
+  }
+}
