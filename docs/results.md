@@ -4,11 +4,11 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–26, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
+Local verification: October 7–30, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
-node --test src/test/js/delivery-tracker.test.cjs
+node --test src/test/js/*.test.cjs
 .\mvnw.cmd spring-boot:test-run@local-lab
 ```
 
@@ -128,6 +128,24 @@ On October 26, the [dead-letter MCP commands](../diagnostics/README.md#inspect-r
 An explicit API retry recovered the first event. MCP then returned its four attempts ending in `SUCCEEDED`, while dead-letter inspection retained the same original record and window. Event history, receiver state and dead-letter snapshots were unchanged across the inspection calls, both before and after recovery. The receiver reported seven requests and one effect across the two events; this observation came from its separate API, not from the MCP output. The launcher was then stopped; this was not a crash-persistence experiment.
 
 All 17 companion tests, 68 Java tests and six dashboard tests passed locally. New protocol fixtures cover bounded/sparse windows, null metadata, malformed responses, unsafe offsets, failure responses, redirects and shared admission. A stalled dead-letter HTTP body timed out in 3,024 ms and closed before fixture cleanup. Cancelling four mixed event/dead-letter calls closed their HTTP responses and restored all four slots (observed close time 7 ms). These fixture timings are observations, not guarantees about Java/Kafka cancellation or model reasoning. The [existing Java inspection checks](#read-only-dead-letter-inspection) separately cover unchanged consumer offsets.
+
+## Dashboard dead-letter inspection
+
+On October 28, the manual **Dead-letter inspector** was checked in a browser against the real Java/Kafka launcher with an isolated database. Two synthetic events exhausted three HTTP `503` attempts each. An unfiltered limit of one displayed the newer record, window `[0, 2)`, two scanned records and the omitted-match warning. Filtering for `73afa22b-dddf-4954-a162-eb9a7a91c112` returned its original offset 0; an unknown UUID displayed an empty snapshot with the same search window and an explicit absence caveat.
+
+Editing the query immediately cleared the previous result. Keyboard submission worked. Expanded payload text containing literal `<img>` and `<script>` markup remained text: the result container contained no image or script elements. No browser warnings or errors were observed while the service was running. Desktop and 390-pixel viewport checks showed readable controls; the narrow page had no horizontal overflow. These are focused manual checks, not a comprehensive accessibility or browser-compatibility audit.
+
+An explicit API retry recovered the selected event with four attempts ending in `SUCCEEDED`. The browser then showed both `DELIVERED` and the original dead letter. Repeated browser inspection left the event, receiver and dead-letter API snapshots unchanged before and after recovery. After stopping the owned launcher, a new inspection showed unavailable, removed the earlier snapshot and left the button enabled for a later manual retry. Stopping the launcher here did not test crash persistence.
+
+All 15 dashboard tests passed, including nine new checks for invalid queries before HTTP, superseded success/error responses, clearing previous success on failure, body limits, sparse/contradictory snapshots and literal text rendering. A real loopback HTTP fixture began a body and withheld its remainder: an injected 250 ms test deadline produced `TIMEOUT`, closed the socket before fixture cleanup, and allowed the next manual query to succeed. The production deadline is five seconds; this fixture tests the cancellation path rather than measuring production outage latency. The full 68-test Java suite also passed. See [the executable dashboard checks](../src/test/js/dead-letter-inspector.test.cjs).
+
+## Recovery evidence in the dashboard
+
+On October 30, the three walkthrough stops and optional MCP commands were exercised against the real launcher using an isolated database. The lost-acknowledgment event, `891a5399-1cc2-4077-bc99-1eca36446c59`, showed `NETWORK_ERROR` then `SUCCEEDED`, two receiver requests and one effect. Exact replay left its observed attempts and receiver counts unchanged. The later exhausted event was processed behind that replay in the single partition and its original Kafka offset was 2.
+
+That second event, `c57fa079-5c09-4c24-84f8-58f8a82caf37`, exhausted three HTTP `503` attempts. Browser inspection returned its dead letter at offset 0 in window `[0, 1)`. Clearing injected failures and choosing **Retry this event** produced `DELIVERED` with a fourth, successful attempt and one matching receiver record. A fresh manual inspection retained the same dead-letter record and window. Both omission flags were false. The [full dashboard capture](dashboard-recovery.jpg) and [interpretation table](walkthrough.md#a-recovered-event-can-still-have-a-dead-letter) show those three views for the same UUID. Global receiver counters were six requests and two effects across both events. No browser warnings or errors were observed during the check.
+
+The documented MCP commands returned all four attempts, then only the latest success with `totalAttempts: 4` and `attemptsTruncated: true`. The separate dead-letter command returned the matching offset 0, its window and omission flags. Event, receiver and dead-letter API snapshots were unchanged across the MCP reads. These are separate observations of a quiescent synthetic run, not a transaction across tools or evidence of model reasoning quality. No runtime behavior was changed for this documentation update.
 
 ## Interpretation
 

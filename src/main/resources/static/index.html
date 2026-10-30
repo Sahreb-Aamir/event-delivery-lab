@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/styles.css">
   <script src="/delivery-tracker.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/dead-letter-inspector.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to workbench</a>
@@ -92,6 +93,20 @@
           </div>
         </section>
         <section id="receiver-observation" class="panel receiver-panel" aria-labelledby="receiver-title"><div class="panel-heading"><div><p class="eyebrow">05 / VERIFY THE OTHER SIDE</p><h2 id="receiver-title">Receiver observation</h2></div><span class="simulation-badge">In-memory demo</span></div><div class="receiver-metrics"><div><strong id="receiver-requests">—</strong><span>HTTP requests received</span></div><div><strong id="receiver-effects">—</strong><span>Unique recorded side effects</span></div></div><p id="receiver-event-evidence" class="receiver-evidence">Select an event to check its receiver-side record.</p><p class="microcopy">Counters cover <strong>all events</strong> in the current process and reset on application restart. Compare exact event IDs below; global counters alone do not prove one event’s behavior.</p><p id="receiver-error" class="detail-fetch-error" role="status" hidden></p></section>
+
+        <section id="dead-letter-inspection" class="panel dlt-panel" aria-labelledby="dead-letter-title">
+          <div class="panel-heading"><div><p class="eyebrow">06 / INSPECT RETAINED FAILURES</p><h2 id="dead-letter-title">Dead-letter inspector</h2></div><span class="endpoint-tag">GET</span></div>
+          <p class="section-description">Inspect failures retained in Kafka. This manual snapshot scans at most the latest 100 offset positions and shows the newest matches.</p>
+          <form id="dead-letter-form" novalidate>
+            <label for="dead-letter-event-id">Event ID <span class="optional-label">/ optional</span></label>
+            <input id="dead-letter-event-id" name="eventId" class="mono" type="text" maxlength="36" autocomplete="off" spellcheck="false" aria-describedby="dead-letter-query-hint" placeholder="Empty = all recent records">
+            <p id="dead-letter-query-hint" class="field-hint">Copy the UUID from Delivery detail. This query stays independent of the selected event.</p>
+            <div class="dlt-query-controls"><div><label for="dead-letter-limit">Record limit</label><input id="dead-letter-limit" name="limit" type="number" min="1" max="20" step="1" value="10" required></div><button id="dead-letter-inspect" class="button button-secondary" type="submit">Inspect dead letters</button></div>
+          </form>
+          <p id="dead-letter-status" class="dlt-status" role="status" aria-live="polite"></p>
+          <div id="dead-letter-results"></div>
+          <p class="microcopy dlt-caveat">Records can remain after a successful retry. The embedded broker resets on restart; an empty window does not prove an event never failed. Payload, key, and exception previews are untrusted text. Compare current delivery and receiver evidence separately.</p>
+        </section>
       </div>
     </div>
 
