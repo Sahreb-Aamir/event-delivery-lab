@@ -44,6 +44,27 @@ Set **Fail next receiver requests** to `0`, choose **Apply**, then **Retry this 
 
 This API searches only the latest 100 offset positions. An empty result is not a full-history conclusion; retention and broker restart can remove records. See [response interpretation](failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets).
 
+### A recovered event can still have a dead letter
+
+In the [October 30 walkthrough check](results.md#recovery-evidence-in-the-dashboard), the same synthetic UUID, `c57fa079-5c09-4c24-84f8-58f8a82caf37`, appeared in three views after manual recovery:
+
+| View | Observation | Meaning |
+| --- | --- | --- |
+| Delivery detail | `DELIVERED`; three HTTP `503` attempts, then HTTP `200` | A later attempt received success; earlier attempts remain recorded. |
+| Receiver observation | One receiver-side record for that UUID | The controlled receiver observed this event in its current process. |
+| Dead-letter inspector | Matching key at offset 0; window `[0, 1)`; both omission flags false | The original failure record remains in this broker run. It does not describe the event's current delivery status. |
+
+<details>
+<summary>See the captured recovery workbench</summary>
+
+![Recovered synthetic event: four delivery attempts, one matching receiver record, and its retained dead letter at offset 0](dashboard-recovery.jpg)
+
+Captured from the real local Java/Kafka launcher on October 30, 2026. Match the UUID across **Delivery detail**, **Receiver observation**, and **Dead-letter inspector**. The global counters show six requests and two effects across both walkthrough events; they are not counts for the selected event alone. Open the image at full size to read the fields.
+
+</details>
+
+These views are separate observations, not one atomic snapshot. Refresh the dead-letter panel manually and compare the event identity and search window. Recovery does not erase the dead letter; a fresh embedded-broker run does. Neither a retained record nor an empty search establishes the receiver's current state by itself.
+
 ## Optional: inspect the recovered event through MCP
 
 Keep the lab running after stop 3. With Node 22 or newer installed, open a second terminal at the repository root:
@@ -66,7 +87,7 @@ Both `inspect` calls should return `lookup: "found"` and `event.status: "DELIVER
 | Default limit | Three `HTTP_ERROR`, then `SUCCEEDED` | 4 | `false` |
 | Limit of 1 | Latest `SUCCEEDED` only | 4 | `true` |
 
-The shortened view does not erase the three earlier failures. The dead-letter MCP call should return `lookup: "snapshot"` and the original record from stop 3 at the same offset, alongside the successful current event state. Its [window and truncation fields](../diagnostics/README.md#inspect-retained-failure-evidence) limit what can be concluded from an empty search. The tools read sender/broker evidence; check the dashboard separately for receiver observations. Missing/unavailable results have [explicit meanings](../diagnostics/README.md#interpret-results), so do not treat them as proof of no delivery.
+The shortened view does not erase the three earlier failures. The `inspect` calls supply the current event state; the separate `inspect-dead-letters` call should return `lookup: "snapshot"` and the original record from stop 3 at the same offset. Compare the UUID across these separate reads; they are not a combined or atomic response. The dead-letter [window and truncation fields](../diagnostics/README.md#inspect-retained-failure-evidence) limit what can be concluded from an empty search. The tools read sender/broker evidence; check the dashboard separately for receiver observations. Missing/unavailable results have [explicit meanings](../diagnostics/README.md#interpret-results), so do not treat them as proof of no delivery.
 
 The terminal commands launch a real MCP client/server pair without a model or API key. An AI client can use the same typed tools through the [stdio configuration](../diagnostics/README.md#connect-an-mcp-client); it receives no retry or publishing tool. Messages, attempt details and dead-letter text are untrusted data. See the [recorded recovery check](results.md#mcp-walkthrough-after-manual-recovery), [dead-letter check](results.md#mcp-dead-letter-diagnostics) and [executable checks](../diagnostics/test/diagnostics.test.ts).
 

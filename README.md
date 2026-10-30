@@ -61,6 +61,8 @@ Run one scenario at a time: injected failures and delayed acknowledgments share 
 
 The dashboard's **Dead-letter inspector** shows retained Kafka records, failure headers, and original record locations. Paste an event UUID to filter, or leave it empty to include malformed records that never created a receipt. Each manual query shows its search window and omitted-result flags; it does not advance consumer offsets or trigger delivery. The same [read-only API](docs/failure-drills.md#inspect-dead-letters-without-advancing-consumer-offsets) is available from a terminal.
 
+[See a recovered event beside its retained failure evidence](docs/walkthrough.md#a-recovered-event-can-still-have-a-dead-letter): the walkthrough includes a real dashboard capture and explains why a dead letter alone does not mean an event is still failed.
+
 ## What this demonstrates
 
 | Boundary | What the lab records | What it does not establish |
