@@ -138,7 +138,9 @@ Executable checks:
 
 **Question:** Which record failed, why was it retained, and can we inspect it without triggering another delivery?
 
-After **Exhaust automatic attempts** reaches `FAILED`, copy the event ID from the dashboard. Replace `<event-id>` in this read-only request:
+After **Exhaust automatic attempts** reaches `FAILED`, copy the UUID from **Delivery detail** into **Dead-letter inspector** and choose **Inspect dead letters**. Leave the filter empty for all recent matches; the dashboard returns up to 20, default 10. Expand a record to see its payload and selected failure headers. This is a manual snapshot: inspect again after recovery to see current retained evidence.
+
+For the same API from a terminal, replace `<event-id>` in this read-only request:
 
 ```sh
 curl "http://127.0.0.1:8080/api/dead-letters?eventId=<event-id>&limit=20"
@@ -166,7 +168,9 @@ Repeat the request, then explicitly retry the failed event through the dashboard
 | `429` | Another inspection is already running; retry later |
 | `503` | The scan could not complete, or the topic is missing/has unsupported partitioning; do not interpret this as an empty topic |
 
-The scan has a shared 3-second Kafka-operation budget plus up to 100 ms for closing its consumer. It supports this lab's single-partition topic only, and never joins a consumer group, commits offsets, creates topics, republishes records, or writes to H2. Kafka retention and the fresh embedded broker limit available history regardless of the window flags. This is an API diagnostic; a dashboard dead-letter view and full-history search remain follow-on work.
+The scan has a shared 3-second Kafka-operation budget plus up to 100 ms for closing its consumer. It supports this lab's single-partition topic only, and never joins a consumer group, commits offsets, creates topics, republishes records, or writes to H2. Kafka retention and the fresh embedded broker limit available history regardless of the window flags. Full-history search is not implemented.
+
+The dashboard clears old results when the query changes or fails. Its five-second HTTP timeout and 256 KiB response cap bound waiting and buffered output; a large escaped preview can exceed that cap even within the item limit. Reduce the limit and inspect again. Error states do not establish an empty topic. Changing a query cancels the browser's HTTP request, while the Java scan remains governed by its own budget.
 
 Executable checks: [`DeadLetterInspectorTest`](../src/test/java/dev/sahreb/delivery/DeadLetterInspectorTest.java) covers bounds, deadlines, filtering and malformed headers. [`DeliveryIntegrationTest`](../src/test/java/dev/sahreb/delivery/DeliveryIntegrationTest.java) checks actual HTTP failures, conflicts, malformed broker records, and unchanged offsets/groups/receipts.
 
