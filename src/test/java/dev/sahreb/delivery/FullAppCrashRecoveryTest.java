@@ -44,8 +44,8 @@ class FullAppCrashRecoveryTest {
     private Process child;
 
     @Test
-    @Timeout(value = 180, unit = TimeUnit.SECONDS)
-    void fullApplicationRetainsUnknownAttemptAndRecoversAfterForcedStop() throws Exception {
+    @Timeout(value = 240, unit = TimeUnit.SECONDS)
+    void fullApplicationRetainsUnknownAttemptsWhenRecoveryIsInterrupted() throws Exception {
         directory = Path.of("target", "crash-probe", "run-" + UUID.randomUUID()).toAbsolutePath();
         Files.createDirectories(directory);
         jdbcUrl = "jdbc:h2:file:" + portable(directory.resolve("receipts"))
@@ -62,6 +62,7 @@ class FullAppCrashRecoveryTest {
         manifest.put("database", jdbcUrl);
         manifest.put("webhookTimeoutMs", 30_000);
         manifest.put("acknowledgmentDelayMs", 5_000);
+        manifest.put("crashCycles", 2);
         manifest.put("scope", "Owned application process termination; not a power-loss or exactly-once guarantee");
         save("manifest.json", manifest);
 
@@ -78,74 +79,104 @@ class FullAppCrashRecoveryTest {
                 save("seeded.json", seeded);
             }
 
-            post("/api/demo/ack-delay", Map.of("count", 1, "delayMs", 5_000), 200);
             NotificationEvent event = event(target, "Synthetic full-application crash recovery probe");
             save("submitted.json", event);
-            post("/api/events", event, 202);
-            JsonNode receiver = waitForReceiver(target);
-            JsonNode before = get("/api/events/" + target);
-            save("receiver-before.json", receiver);
-            save("before.json", before);
-            assertThat(receiver.path("sideEffectCount").asInt()).isEqualTo(7);
-            assertThat(before.path("status").asText()).as("Must stop inside the delayed acknowledgment window")
-                    .isEqualTo("DELIVERING");
-            assertThat(before.path("attempts").size()).isEqualTo(1);
-            assertThat(before.at("/attempts/0/outcome").asText()).isEqualTo("PENDING");
-            assertThat(before.at("/attempts/0/finishedAt").isNull()).isTrue();
+            JsonNode receipt = null;
+            List<JsonNode> unknownAttempts = new ArrayList<>();
+            List<DeliveryAttempt> expectedRawAttempts = new ArrayList<>();
+            for (int cycle = 1; cycle <= 2; cycle++) {
+                String phase = "cycle-" + cycle;
+                post("/api/demo/ack-delay", Map.of("count", 1, "delayMs", 5_000), 200);
+                if (cycle == 1) {
+                    post("/api/events", event, 202);
+                } else {
+                    // Recovery is itself interrupted after the receiver acts, leaving another unknown attempt.
+                    post("/api/events/" + target + "/retry", null, 202);
+                }
+                JsonNode receiver = waitForReceiver(target);
+                JsonNode before = get("/api/events/" + target);
+                save(phase + "-receiver-before.json", receiver);
+                save(phase + "-before.json", before);
+                assertThat(receiver.path("sideEffectCount").asInt()).isEqualTo(cycle == 1 ? 7 : 1);
+                assertThat(before.path("status").asText()).as("Must stop inside the delayed acknowledgment window")
+                        .isEqualTo("DELIVERING");
+                if (cycle == 1) receipt = before.path("receipt");
+                assertThat(before.path("receipt")).isEqualTo(receipt);
+                assertThat(before.path("attempts").size()).isEqualTo(cycle);
+                for (int index = 0; index < unknownAttempts.size(); index++) {
+                    assertThat(before.path("attempts").get(index)).isEqualTo(unknownAttempts.get(index));
+                }
+                JsonNode pending = before.path("attempts").get(cycle - 1);
+                assertThat(pending.path("eventId").asText()).isEqualTo(target.toString());
+                assertThat(pending.path("outcome").asText()).isEqualTo("PENDING");
+                assertThat(pending.path("finishedAt").isNull()).isTrue();
+                assertThat(pending.path("httpStatus").isNull()).isTrue();
+                assertThat(pending.path("detail").isNull()).isTrue();
+                if (!unknownAttempts.isEmpty()) {
+                    assertThat(pending.path("id").asLong()).isGreaterThan(unknownAttempts.get(cycle - 2).path("id").asLong());
+                }
+                unknownAttempts.add(pending);
+                expectedRawAttempts.add(JSON.treeToValue(pending, DeliveryAttempt.class));
 
-            assertThat(child.isAlive()).as("The owned application must still be running at the crash boundary").isTrue();
-            stopOwnedChild();
-            // Preserve one untouched snapshot. Opening H2 can perform recovery, so inspect a second copy.
-            Path snapshot = directory.resolve("postkill-untouched.mv.db");
-            copyAfterProcessExit(directory.resolve("receipts.mv.db"), snapshot);
-            Files.copy(snapshot, directory.resolve("postkill-inspection.mv.db"));
-            RawDatabase raw = inspectCopy();
-            save("raw-database.json", raw);
-            assertThat(raw.receipts()).hasSize(7);
-            assertThat(raw.states()).hasSize(7);
-            assertThat(raw.attempts()).hasSize(7);
-            assertThat(raw.receipts().stream().filter(receipt -> receipt.eventId().equals(target)).toList())
-                    .containsExactly(JSON.treeToValue(before.path("receipt"), Receipt.class));
-            assertThat(raw.states()).containsEntry(target.toString(), "DELIVERING");
-            assertThat(raw.attempts().stream().filter(attempt -> attempt.eventId().equals(target)).toList())
-                    .containsExactly(JSON.treeToValue(before.at("/attempts/0"), DeliveryAttempt.class));
-            for (JsonNode seed : seeded) {
-                UUID seedId = UUID.fromString(seed.at("/receipt/eventId").asText());
-                assertThat(raw.states()).containsEntry(seedId.toString(), "DELIVERED");
-                assertThat(raw.attempts().stream().filter(attempt -> attempt.eventId().equals(seedId)).toList())
-                        .containsExactly(JSON.treeToValue(seed.at("/attempts/0"), DeliveryAttempt.class));
-            }
+                assertThat(child.isAlive()).as("The owned application must still be running at the crash boundary").isTrue();
+                stopOwnedChild();
+                // Preserve a snapshot per crash. Opening H2 can perform recovery, so inspect a second copy.
+                Path snapshot = directory.resolve(phase + "-postkill-untouched.mv.db");
+                copyAfterProcessExit(directory.resolve("receipts.mv.db"), snapshot);
+                Files.copy(snapshot, directory.resolve(phase + "-postkill-inspection.mv.db"));
+                RawDatabase raw = inspectCopy(phase + "-postkill-inspection");
+                save(phase + "-raw-database.json", raw);
+                assertThat(raw.receipts()).hasSize(7);
+                assertThat(raw.states()).hasSize(7);
+                assertThat(raw.attempts()).hasSize(6 + cycle);
+                assertThat(raw.receipts().stream().filter(row -> row.eventId().equals(target)).toList())
+                        .containsExactly(JSON.treeToValue(receipt, Receipt.class));
+                assertThat(raw.states()).containsEntry(target.toString(), "DELIVERING");
+                assertThat(raw.attempts().stream().filter(attempt -> attempt.eventId().equals(target)).toList())
+                        .containsExactlyElementsOf(expectedRawAttempts);
+                for (JsonNode seed : seeded) {
+                    UUID seedId = UUID.fromString(seed.at("/receipt/eventId").asText());
+                    assertThat(raw.receipts().stream().filter(row -> row.eventId().equals(seedId)).toList())
+                            .containsExactly(JSON.treeToValue(seed.path("receipt"), Receipt.class));
+                    assertThat(raw.states()).containsEntry(seedId.toString(), "DELIVERED");
+                    assertThat(raw.attempts().stream().filter(attempt -> attempt.eventId().equals(seedId)).toList())
+                            .containsExactly(JSON.treeToValue(seed.at("/attempts/0"), DeliveryAttempt.class));
+                }
 
-            start("restart");
-            JsonNode interrupted = waitForStatus(target, "INTERRUPTED");
-            save("after-restart.json", interrupted);
-            assertThat(interrupted.path("receipt")).isEqualTo(before.path("receipt"));
-            assertThat(interrupted.path("attempts")).isEqualTo(before.path("attempts"));
-            JsonNode resetReceiver = get("/api/demo");
-            save("receiver-restarted.json", resetReceiver);
-            assertThat(resetReceiver.path("receivedRequests").asInt()).isZero();
-            assertThat(resetReceiver.path("deliveries").size()).isZero();
-            for (JsonNode seed : seeded) {
-                assertThat(get("/api/events/" + seed.at("/receipt/eventId").asText())).isEqualTo(seed);
+                start(phase + "-restart");
+                JsonNode interrupted = waitForStatus(target, "INTERRUPTED");
+                save(phase + "-after-restart.json", interrupted);
+                assertThat(interrupted.path("receipt")).isEqualTo(receipt);
+                assertThat(interrupted.path("attempts")).isEqualTo(before.path("attempts"));
+                JsonNode resetReceiver = get("/api/demo");
+                save(phase + "-receiver-restarted.json", resetReceiver);
+                assertThat(resetReceiver.path("receivedRequests").asInt()).isZero();
+                assertThat(resetReceiver.path("deliveries").size()).isZero();
+                for (JsonNode seed : seeded) {
+                    assertThat(get("/api/events/" + seed.at("/receipt/eventId").asText())).isEqualTo(seed);
+                }
             }
 
             post("/api/events/" + target + "/retry", null, 202);
             JsonNode recovered = waitForStatus(target, "DELIVERED");
             save("after-retry.json", recovered);
-            assertThat(recovered.path("receipt")).isEqualTo(before.path("receipt"));
-            assertThat(recovered.path("attempts").size()).isEqualTo(2);
-            assertThat(recovered.at("/attempts/0")).isEqualTo(before.at("/attempts/0"));
-            assertThat(recovered.at("/attempts/1/id").asLong()).isGreaterThan(before.at("/attempts/0/id").asLong());
-            assertThat(recovered.at("/attempts/1/outcome").asText()).isEqualTo("SUCCEEDED");
-            assertThat(recovered.at("/attempts/1/httpStatus").asInt()).isEqualTo(200);
+            assertThat(recovered.path("receipt")).isEqualTo(receipt);
+            assertThat(recovered.path("attempts").size()).isEqualTo(3);
+            for (int index = 0; index < unknownAttempts.size(); index++) {
+                assertThat(recovered.path("attempts").get(index)).isEqualTo(unknownAttempts.get(index));
+            }
+            assertThat(recovered.at("/attempts/2/id").asLong()).isGreaterThan(unknownAttempts.get(1).path("id").asLong());
+            assertThat(recovered.at("/attempts/2/outcome").asText()).isEqualTo("SUCCEEDED");
+            assertThat(recovered.at("/attempts/2/httpStatus").asInt()).isEqualTo(200);
             JsonNode retriedReceiver = get("/api/demo");
             save("receiver-after-retry.json", retriedReceiver);
             assertThat(retriedReceiver.path("receivedRequests").asInt()).isEqualTo(1);
             assertThat(retriedReceiver.path("deliveries").size()).isEqualTo(1);
             assertThat(retriedReceiver.at("/deliveries/0/eventId").asText()).isEqualTo(target.toString());
-            // This is a second effect across process lifetimes: receiver deduplication is deliberately volatile.
+            // Three effects across process lifetimes: receiver deduplication is deliberately volatile.
             save("result.json", Map.of("status", "PASSED", "finishedAt", Instant.now(),
-                    "effectsAcrossReceiverLifetimes", 2, "oldAttemptOutcome", "PENDING"));
+                    "completedCrashCycles", 2, "effectsAcrossReceiverLifetimes", 3,
+                    "unknownAttemptCount", 2, "oldAttemptOutcome", "PENDING"));
         } catch (Exception | AssertionError failure) {
             save("result.json", Map.of("status", "FAILED", "finishedAt", Instant.now(),
                     "failure", failure.toString()));
@@ -228,11 +259,11 @@ class FullAppCrashRecoveryTest {
         return JSON.readTree(response.body());
     }
 
-    private RawDatabase inspectCopy() throws Exception {
+    private RawDatabase inspectCopy(String databaseName) throws Exception {
         List<Receipt> receipts = new ArrayList<>();
         Map<String, String> states = new LinkedHashMap<>();
         List<DeliveryAttempt> attempts = new ArrayList<>();
-        String inspectionUrl = "jdbc:h2:file:" + portable(directory.resolve("postkill-inspection")) + ";IFEXISTS=TRUE";
+        String inspectionUrl = "jdbc:h2:file:" + portable(directory.resolve(databaseName)) + ";IFEXISTS=TRUE";
         try (Connection connection = DriverManager.getConnection(inspectionUrl, "sa", "");
                 Statement statement = connection.createStatement()) {
             try (ResultSet rows = statement.executeQuery("SELECT * FROM receipts ORDER BY recorded_at, event_id")) {

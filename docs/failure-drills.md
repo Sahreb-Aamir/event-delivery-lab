@@ -88,7 +88,7 @@ This startup behavior applies only to the local embedded-broker launcher. The pa
 
 ## Force-stop the full application
 
-**Question:** Does the full launcher preserve an unknown attempt when the receiver has acted but the sender is killed before recording a response?
+**Question:** Does the full launcher preserve unknown attempts when both the original delivery and its explicit recovery are killed after the receiver acts but before the sender records a response?
 
 Run the focused test (also included in `verify`):
 
@@ -104,9 +104,11 @@ Windows PowerShell:
 
 [`FullAppCrashRecoveryTest`](../src/test/java/dev/sahreb/delivery/FullAppCrashRecoveryTest.java) starts `LocalLab` in a child JVM with real Kafka, a fresh file database, and an isolated loopback HTTP port. It sends six successful events, delays the next receiver acknowledgment, and waits for the new event's exact ID at the receiver and a `PENDING` sender attempt. Only then does it forcibly terminate its own child process.
 
-The test inspects a database copy before restarting the app, asserts that the receipt and pending attempt survived, and then checks that startup reconciliation produces `INTERRUPTED`. Explicit retry must preserve the old unknown attempt and add a new `SUCCEEDED` attempt. The receiver resets on restart, so the same event performs another effect in the new process; this drill does not demonstrate durable receiver deduplication.
+The test inspects a database copy before restarting the app, asserts that the receipt and pending attempt survived, and then checks that startup reconciliation produces `INTERRUPTED`. It delays another acknowledgment and explicitly retries the same event. After observing that ID at the restarted receiver and a second `PENDING` attempt, it forcibly stops the application again. A separate database copy must retain both unknown attempts before the second restart; startup must preserve their IDs, timestamps and unknown outcomes, plus all six completed events.
 
-Evidence is retained in a unique directory under `target/crash-probe/`: runtime/configuration details, HTTP observations, a database snapshot from before restart, raw database observations, and both application logs. CI uploads this evidence alongside the Java test reports. Copy it elsewhere before running `clean` if you need to investigate a failure. The test never uses the dashboard's `data/receipts` database. Run one Maven build at a time in a checkout so another build cannot replace the child process's classes during the experiment.
+A final explicit retry must retain the two unknown attempts and append a third, `SUCCEEDED` attempt. The receiver resets on each restart, so this event performs three effects across three process lifetimes. A later success does not resolve the earlier unknown outcomes; this drill does not demonstrate durable receiver deduplication.
+
+Evidence is retained in a unique directory under `target/crash-probe/`: runtime/configuration details, HTTP observations, and all three application logs. Each `cycle-1-*` and `cycle-2-*` set includes pre-stop observations, an untouched database snapshot, a second copy opened for raw inspection, and observations after startup reconciliation. CI uploads this evidence alongside the Java test reports. Copy it elsewhere before running `clean` if you need to investigate a failure. The test never uses the dashboard's `data/receipts` database. Run one Maven build at a time in a checkout so another build cannot replace the child process's classes during the experiment.
 
 This is a controlled process-termination check, not a power-loss or persistent-broker recovery test. The [earlier unexplained loss](results.md#what-a-harder-test-exposed) remains an open investigation even when this check passes.
 

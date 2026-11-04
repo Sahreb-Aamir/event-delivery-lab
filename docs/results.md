@@ -4,7 +4,7 @@ These are controlled correctness experiments, not performance benchmarks or prod
 
 ## Environment and commands
 
-Local verification: October 7–30, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
+Local verification: October 7–November 4, 2026, Windows, Temurin JDK 17.0.19+10, Maven wrapper 3.9.16, Spring Boot 4.1.1, H2 2.5.250. Dashboard state tests and the optional MCP companion used Node 24.14.1. The Java application itself does not require Node.
 
 ```powershell
 .\mvnw.cmd verify
@@ -67,6 +67,14 @@ On October 9, [`FullAppCrashRecoveryTest`](../src/test/java/dev/sahreb/delivery/
 The receiver starts empty after restart and performs a second effect for the target event across the two process lifetimes. This makes its volatile deduplication limit observable. A negative control temporarily removed startup reconciliation: the test failed because the event remained `DELIVERING` instead of becoming `INTERRUPTED`. The call was restored before the passing full suite.
 
 The [focused command and evidence locations](failure-drills.md#force-stop-the-full-application) let another developer repeat the check or inspect a failed run. These results add a reproducible full-path regression; they do not resolve the earlier anomaly or establish power-loss safety.
+
+### Recovery interrupted by a second crash
+
+On November 4, the same probe was extended to interrupt the recovery attempt too. The first restart preserved the original `PENDING` attempt. An explicit retry then reached the receiver, but the application was forcibly stopped again during a delayed acknowledgment. Both unknown attempts survived inspection of a database copy before the second restart and remained unchanged after startup reconciliation. The six completed events retained their receipts, states and attempts through both restarts.
+
+The focused run used synthetic event `f3c25f90-85ef-43fc-bd89-127d58fd7a10`. Final explicit retry produced one receipt and three ordered attempts: `PENDING`, `PENDING`, `SUCCEEDED`. The two historical attempts kept their IDs, timestamps and null result fields. This event was observed at the receiver in each of three process lifetimes; its three effects demonstrate the receiver's volatile deduplication limit, not durable exactly-once delivery. Each crash retains a separate untouched database snapshot, inspection copy and HTTP observations.
+
+A negative control temporarily changed the earliest pending attempt's detail during startup only when an event had two pending rows. Both raw database inspections passed, but the test failed at the second restart because the historical attempt no longer matched. The production source was restored afterward, and all 68 Java tests passed in `mvnw.cmd verify` with zero failures, errors or skips. This checks that the extended probe detects rewritten history on repeated recovery; it does not reproduce or explain the earlier missing-row anomaly.
 
 ## Read-only dead-letter inspection
 
