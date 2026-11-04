@@ -108,7 +108,7 @@ node --test src/test/js/*.test.cjs
 
 Node is used for these frontend checks and the optional MCP companion. The Java application runs without it.
 
-The [automated crash drill](docs/failure-drills.md#force-stop-the-full-application) uses a separate process and database. It saves receiver observations, database snapshots, application logs, and recovery results under `target/crash-probe/` so a failure can be investigated.
+The [automated crash drill](docs/failure-drills.md#force-stop-the-full-application) interrupts both a delivery and its explicit recovery, then checks that a final retry preserves both unknown attempts. It uses separate processes and a test database, saving receiver observations, per-crash database snapshots, application logs, and recovery results under `target/crash-probe/` so a failure can be investigated.
 
 ## Implementation choices
 
